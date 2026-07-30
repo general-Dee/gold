@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DeleteTradeButton } from "@/components/trades/DeleteTradeButton";
 import { uploadTradeImageAction } from "@/server/actions/images";
 import { getTradeById } from "@/server/queries/trades";
 
@@ -38,9 +39,12 @@ export default async function TradeDetailPage({
             {new Date(trade.entryAt).toLocaleString()}
           </p>
         </div>
-        <Link href={`/trades/${trade.id}/edit`} className={buttonVariants({ variant: "outline" })}>
-          Edit
-        </Link>
+        <div className="flex gap-2">
+          <Link href={`/trades/${trade.id}/edit`} className={buttonVariants({ variant: "outline" })}>
+            Edit
+          </Link>
+          <DeleteTradeButton tradeId={trade.id} />
+        </div>
       </div>
 
       <Card>

@@ -1,8 +1,12 @@
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { rules, tradeImages, tradeRuleChecks, trades } from "@/server/db/schema";
+import { badgeUnlocks, rules, tradeImages, tradeRuleChecks, trades } from "@/server/db/schema";
 import { plannedRiskReward, realizedRiskReward } from "@/lib/calculations";
 import type { TradeInput } from "@/lib/validation";
+
+const UPLOADS_DIR = path.join(process.cwd(), "data", "uploads");
 
 export async function listTrades() {
   return db.select().from(trades).orderBy(desc(trades.entryAt));
@@ -131,4 +135,26 @@ export async function updateTrade(id: string, input: TradeInput) {
   await snapshotRuleChecks(id, input.ruleChecks);
 
   return trade;
+}
+
+export async function deleteTrade(id: string) {
+  const images = await db.select().from(tradeImages).where(eq(tradeImages.tradeId, id));
+
+  // badgeUnlocks.tradeId is ON DELETE no action, so it must be detached before
+  // the trade row goes away — nullify rather than delete, since an earned badge
+  // shouldn't be revoked just because its trade record was removed.
+  await db.update(badgeUnlocks).set({ tradeId: null }).where(eq(badgeUnlocks.tradeId, id));
+
+  // tradeRuleChecks and tradeImages cascade-delete with the trade.
+  await db.delete(trades).where(eq(trades.id, id));
+
+  await Promise.all(
+    images.map(async (img) => {
+      try {
+        await unlink(path.join(UPLOADS_DIR, img.filePath));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+    }),
+  );
 }

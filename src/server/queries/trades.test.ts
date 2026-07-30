@@ -13,14 +13,16 @@ let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
 let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
 let createTrade: typeof import("@/server/queries/trades").createTrade;
 let updateTrade: typeof import("@/server/queries/trades").updateTrade;
+let deleteTrade: typeof import("@/server/queries/trades").deleteTrade;
 let getTradeById: typeof import("@/server/queries/trades").getTradeById;
 
 beforeAll(async () => {
   ({ db, schema } = await bootstrapTestDb());
-  ({ createTrade, updateTrade, getTradeById } = await import("@/server/queries/trades"));
+  ({ createTrade, updateTrade, deleteTrade, getTradeById } = await import("@/server/queries/trades"));
 });
 
 beforeEach(async () => {
+  await db.delete(schema.badgeUnlocks);
   await db.delete(schema.tradeRuleChecks);
   await db.delete(schema.trades);
   await db.delete(schema.rules);
@@ -107,5 +109,43 @@ describe("getTradeById", () => {
     expect(found?.trade.id).toBe(trade.id);
     expect(found?.checks).toEqual([]);
     expect(found?.images).toEqual([]);
+  });
+});
+
+describe("deleteTrade", () => {
+  it("removes the trade and cascades its rule checks", async () => {
+    const [rule] = await db.insert(schema.rules).values({ text: "Rule A" }).returning();
+    const trade = await createTrade(
+      buildInput({ ruleChecks: [{ ruleId: rule.id, status: "followed" }] }),
+    );
+
+    await deleteTrade(trade.id);
+
+    expect(await getTradeById(trade.id)).toBeNull();
+    const remainingChecks = await db
+      .select()
+      .from(schema.tradeRuleChecks)
+      .where(eq(schema.tradeRuleChecks.tradeId, trade.id));
+    expect(remainingChecks).toEqual([]);
+  });
+
+  it("detaches rather than throws when a badge unlock still references the trade", async () => {
+    const trade = await createTrade(buildInput());
+    const [unlock] = await db
+      .insert(schema.badgeUnlocks)
+      .values({ badgeKey: "streak_3", tradeId: trade.id })
+      .returning();
+
+    await expect(deleteTrade(trade.id)).resolves.not.toThrow();
+
+    const [after] = await db
+      .select()
+      .from(schema.badgeUnlocks)
+      .where(eq(schema.badgeUnlocks.id, unlock.id));
+    expect(after).toMatchObject({ badgeKey: "streak_3", tradeId: null });
+  });
+
+  it("is a no-op for an id that doesn't exist", async () => {
+    await expect(deleteTrade("does-not-exist")).resolves.not.toThrow();
   });
 });

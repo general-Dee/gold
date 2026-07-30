@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createTrade, updateTrade } from "@/server/queries/trades";
+import { createTrade, deleteTrade, updateTrade } from "@/server/queries/trades";
 import { tradeSchema } from "@/lib/validation";
 import { evaluateBadgesForTrade } from "@/server/gamification/evaluate";
 
@@ -30,4 +30,12 @@ export async function updateTradeAction(id: string, input: unknown) {
   redirect(`/trades/${id}`);
 
   return trade;
+}
+
+export async function deleteTradeAction(id: string) {
+  await deleteTrade(id);
+
+  revalidatePath("/trades");
+  revalidatePath("/");
+  redirect("/trades");
 }
