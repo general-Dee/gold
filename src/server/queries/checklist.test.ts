@@ -1,5 +1,51 @@
-import { describe, it, expect } from "vitest";
-import { computeChecklistStreaks } from "@/server/queries/checklist";
+import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { DEFAULT_CHECKLIST_ITEMS } from "@/lib/constants";
+import { localDateKey } from "@/lib/dates";
+
+// Every function under test transitively imports "@/server/db/client", which
+// creates its sqlite client as a module-load side effect. A static top-level
+// import would run before bootstrapTestDb() sets DATABASE_URL, so everything
+// is imported dynamically inside beforeAll instead (see gamification.test.ts
+// for the failure mode this avoids). DEFAULT_CHECKLIST_ITEMS/localDateKey have
+// no db dependency, so they're safe to import statically above.
+let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
+let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+let computeChecklistStreaks: typeof import("@/server/queries/checklist").computeChecklistStreaks;
+let createChecklistItem: typeof import("@/server/queries/checklist").createChecklistItem;
+let archiveChecklistItem: typeof import("@/server/queries/checklist").archiveChecklistItem;
+let addCompletion: typeof import("@/server/queries/checklist").addCompletion;
+let getCompletionsForDate: typeof import("@/server/queries/checklist").getCompletionsForDate;
+let getChecklistStatusForDate: typeof import("@/server/queries/checklist").getChecklistStatusForDate;
+let getChecklistHistory: typeof import("@/server/queries/checklist").getChecklistHistory;
+let seedDefaultChecklistItemsIfEmpty: typeof import("@/server/queries/checklist").seedDefaultChecklistItemsIfEmpty;
+
+beforeAll(async () => {
+  ({ db, schema } = await bootstrapTestDb());
+  ({
+    computeChecklistStreaks,
+    createChecklistItem,
+    archiveChecklistItem,
+    addCompletion,
+    getCompletionsForDate,
+    getChecklistStatusForDate,
+    getChecklistHistory,
+    seedDefaultChecklistItemsIfEmpty,
+  } = await import("@/server/queries/checklist"));
+});
+
+beforeEach(async () => {
+  await db.delete(schema.checklistCompletions);
+  await db.delete(schema.checklistItems);
+});
+
+function daysAgoKey(n: number) {
+  // Mirrors getChecklistHistory's own calendar-day subtraction (setDate, not a
+  // fixed millisecond offset), so this can't drift from it across a DST change.
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return localDateKey(d);
+}
 
 describe("computeChecklistStreaks", () => {
   it("returns zeros for an empty history", () => {
@@ -25,5 +71,98 @@ describe("computeChecklistStreaks", () => {
     expect(result.streakAtDay).toEqual([1, 0, 1]);
     expect(result.currentStreak).toBe(1);
     expect(result.longestStreak).toBe(1);
+  });
+});
+
+describe("getChecklistStatusForDate", () => {
+  it("is never done when there are zero active items", async () => {
+    expect(await getChecklistStatusForDate(daysAgoKey(0))).toEqual({
+      total: 0,
+      completed: 0,
+      allDone: false,
+    });
+  });
+
+  it("is done once completions cover every active item", async () => {
+    const a = await createChecklistItem("Check calendar");
+    const b = await createChecklistItem("Check DXY");
+    const today = daysAgoKey(0);
+
+    expect(await getChecklistStatusForDate(today)).toEqual({ total: 2, completed: 0, allDone: false });
+
+    await addCompletion(a.id, today);
+    expect(await getChecklistStatusForDate(today)).toEqual({ total: 2, completed: 1, allDone: false });
+
+    await addCompletion(b.id, today);
+    expect(await getChecklistStatusForDate(today)).toEqual({ total: 2, completed: 2, allDone: true });
+  });
+});
+
+describe("addCompletion", () => {
+  it("is idempotent for the same item and date", async () => {
+    const item = await createChecklistItem("Check calendar");
+    const today = daysAgoKey(0);
+
+    await addCompletion(item.id, today);
+    await addCompletion(item.id, today);
+
+    expect(await getCompletionsForDate(today)).toHaveLength(1);
+  });
+});
+
+describe("getChecklistHistory", () => {
+  it("includes every date in the window, including zero-completion days", async () => {
+    await createChecklistItem("Check calendar");
+
+    const history = await getChecklistHistory(3);
+
+    expect(history).toHaveLength(4); // since..today inclusive
+    expect(history.map((h) => h.date)).toEqual([
+      daysAgoKey(3),
+      daysAgoKey(2),
+      daysAgoKey(1),
+      daysAgoKey(0),
+    ]);
+    expect(history.every((h) => h.completed === 0 && h.total === 1 && !h.allDone)).toBe(true);
+  });
+
+  it("uses the currently-active item count for `total`, not the count active on that historical day", async () => {
+    const a = await createChecklistItem("Check calendar");
+    const b = await createChecklistItem("Check DXY");
+    const twoDaysAgo = daysAgoKey(2);
+
+    // Both items were active and completed two days ago.
+    await addCompletion(a.id, twoDaysAgo);
+    await addCompletion(b.id, twoDaysAgo);
+
+    // Item b is archived after the fact — history is recomputed against
+    // today's active-item count (1), not the 2 that were active back then.
+    await archiveChecklistItem(b.id);
+
+    const history = await getChecklistHistory(5);
+    const day = history.find((h) => h.date === twoDaysAgo);
+
+    expect(day).toMatchObject({ completed: 2, total: 1, allDone: true });
+  });
+});
+
+describe("seedDefaultChecklistItemsIfEmpty", () => {
+  it("seeds the default items only when the table is empty", async () => {
+    await seedDefaultChecklistItemsIfEmpty();
+    const afterFirstSeed = await db.select().from(schema.checklistItems);
+    expect(afterFirstSeed).toHaveLength(DEFAULT_CHECKLIST_ITEMS.length);
+
+    await seedDefaultChecklistItemsIfEmpty();
+    const afterSecondSeed = await db.select().from(schema.checklistItems);
+    expect(afterSecondSeed).toHaveLength(DEFAULT_CHECKLIST_ITEMS.length);
+  });
+
+  it("does not seed when an item already exists", async () => {
+    await createChecklistItem("Custom item");
+    await seedDefaultChecklistItemsIfEmpty();
+
+    const items = await db.select().from(schema.checklistItems);
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toBe("Custom item");
   });
 });
