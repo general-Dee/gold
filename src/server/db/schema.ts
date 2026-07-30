@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 
 const id = () =>
@@ -113,3 +113,30 @@ export const badgeUnlocks = sqliteTable("badge_unlocks", {
     .notNull()
     .default(sql`(current_timestamp)`),
 });
+
+export const checklistItems = sqliteTable("checklist_items", {
+  id: id(),
+  text: text("text").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  archivedAt: text("archived_at"),
+  ...timestamps,
+});
+
+export const checklistCompletions = sqliteTable(
+  "checklist_completions",
+  {
+    id: id(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => checklistItems.id, { onDelete: "cascade" }),
+    // Local calendar date this completion applies to, 'YYYY-MM-DD' (see src/lib/dates.ts).
+    completionDate: text("completion_date").notNull(),
+    completedAt: text("completed_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    uniqueIndex("checklist_completions_item_date_idx").on(table.itemId, table.completionDate),
+  ],
+);

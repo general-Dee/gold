@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BadgeGallery } from "@/components/dashboard/BadgeGallery";
+import { ChecklistStatusCard } from "@/components/dashboard/ChecklistStatusCard";
 import { QuickStats } from "@/components/dashboard/QuickStats";
 import { StreakCard } from "@/components/dashboard/StreakCard";
 import { EquityCurveChart } from "@/components/analytics/EquityCurveChart";
@@ -7,11 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAverageRiskReward, getEquityCurve, getWinRate, get30DayAdherence } from "@/server/queries/analytics";
+import { getChecklistStatusForDate } from "@/server/queries/checklist";
 import { getBadgeUnlocks, getTradeAdherenceHistory, computeStreaks } from "@/server/queries/gamification";
 import { listTrades } from "@/server/queries/trades";
+import { localDateKey } from "@/lib/dates";
 
 export default async function DashboardPage() {
-  const [history, badgeUnlocks, winRate, avgRealizedR, adherence30d, equity, trades] =
+  const today = localDateKey();
+  const [history, badgeUnlocks, winRate, avgRealizedR, adherence30d, equity, trades, checklistStatus] =
     await Promise.all([
       getTradeAdherenceHistory(),
       getBadgeUnlocks(),
@@ -20,6 +24,7 @@ export default async function DashboardPage() {
       get30DayAdherence(),
       getEquityCurve(),
       listTrades(),
+      getChecklistStatusForDate(today),
     ]);
 
   const { currentStreak, longestStreak } = computeStreaks(history);
@@ -35,9 +40,10 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <StreakCard currentStreak={currentStreak} longestStreak={longestStreak} />
         <QuickStats winRate={winRate} avgRealizedR={avgRealizedR} adherence30d={adherence30d} />
+        <ChecklistStatusCard {...checklistStatus} />
       </div>
 
       <Card>

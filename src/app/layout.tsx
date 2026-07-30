@@ -4,6 +4,7 @@ import "./globals.css";
 import { Nav } from "@/components/nav";
 import { Toaster } from "@/components/ui/sonner";
 import { seedDefaultsIfEmpty } from "@/server/queries/rules";
+import { seedDefaultChecklistItemsIfEmpty } from "@/server/queries/checklist";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,7 +26,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await seedDefaultsIfEmpty();
+  await Promise.all([seedDefaultsIfEmpty(), seedDefaultChecklistItemsIfEmpty()]);
 
   return (
     <html

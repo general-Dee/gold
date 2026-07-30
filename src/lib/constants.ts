@@ -42,6 +42,16 @@ export const DEFAULT_MOOD_TAGS: { name: string; category: "before" | "after" | "
   { name: "Relieved", category: "after" },
 ];
 
+export const DEFAULT_CHECKLIST_ITEMS = [
+  "Check economic calendar",
+  "Check DXY",
+  "Check real yields / 10Y",
+  "Note key S/R levels",
+  "Confirm no red-flag news in next 2 hours",
+  "Confirm risk budget for the day",
+  "Confirm mental state fit to trade",
+];
+
 /** UTC hour ranges used to suggest a session from a trade's entry time. */
 export function sessionFromEntryTime(entryAt: Date): Session {
   const hour = entryAt.getUTCHours();
