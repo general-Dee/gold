@@ -3,12 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { ChecklistHistoryChart } from "@/components/checklist/ChecklistHistoryChart";
 import { PreMarketChecklist } from "@/components/checklist/PreMarketChecklist";
 import {
   archiveChecklistItemAction,
   createChecklistItemAction,
 } from "@/server/actions/checklist";
 import {
+  computeChecklistStreaks,
+  getChecklistHistory,
   getCompletionsForDate,
   listActiveChecklistItems,
 } from "@/server/queries/checklist";
@@ -16,11 +19,13 @@ import { localDateKey } from "@/lib/dates";
 
 export default async function ChecklistPage() {
   const today = localDateKey();
-  const [items, completions] = await Promise.all([
+  const [items, completions, history] = await Promise.all([
     listActiveChecklistItems(),
     getCompletionsForDate(today),
+    getChecklistHistory(90),
   ]);
   const completedItemIds = completions.map((c) => c.itemId);
+  const { currentStreak, longestStreak } = computeChecklistStreaks(history);
 
   return (
     <div className="flex flex-col gap-8">
@@ -38,6 +43,27 @@ export default async function ChecklistPage() {
         </CardHeader>
         <CardContent>
           <PreMarketChecklist items={items} date={today} completedItemIds={completedItemIds} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>History</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          <div className="flex items-end gap-8">
+            <div>
+              <div className="text-4xl font-semibold tabular-nums">{currentStreak}</div>
+              <div className="text-xs text-muted-foreground">consecutive fully-completed days</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold tabular-nums text-muted-foreground">
+                {longestStreak}
+              </div>
+              <div className="text-xs text-muted-foreground">longest streak (last 90 days)</div>
+            </div>
+          </div>
+          <ChecklistHistoryChart data={history} />
         </CardContent>
       </Card>
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BadgeGallery } from "@/components/dashboard/BadgeGallery";
 import { ChecklistStatusCard } from "@/components/dashboard/ChecklistStatusCard";
+import { ChecklistStreakCard } from "@/components/dashboard/ChecklistStreakCard";
 import { QuickStats } from "@/components/dashboard/QuickStats";
 import { StreakCard } from "@/components/dashboard/StreakCard";
 import { EquityCurveChart } from "@/components/analytics/EquityCurveChart";
@@ -8,24 +9,34 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAverageRiskReward, getEquityCurve, getWinRate, get30DayAdherence } from "@/server/queries/analytics";
-import { getChecklistStatusForDate } from "@/server/queries/checklist";
+import { getChecklistStatusForDate, getChecklistStreaks } from "@/server/queries/checklist";
 import { getBadgeUnlocks, getTradeAdherenceHistory, computeStreaks } from "@/server/queries/gamification";
 import { listTrades } from "@/server/queries/trades";
 import { localDateKey } from "@/lib/dates";
 
 export default async function DashboardPage() {
   const today = localDateKey();
-  const [history, badgeUnlocks, winRate, avgRealizedR, adherence30d, equity, trades, checklistStatus] =
-    await Promise.all([
-      getTradeAdherenceHistory(),
-      getBadgeUnlocks(),
-      getWinRate(),
-      getAverageRiskReward("realized"),
-      get30DayAdherence(),
-      getEquityCurve(),
-      listTrades(),
-      getChecklistStatusForDate(today),
-    ]);
+  const [
+    history,
+    badgeUnlocks,
+    winRate,
+    avgRealizedR,
+    adherence30d,
+    equity,
+    trades,
+    checklistStatus,
+    checklistStreaks,
+  ] = await Promise.all([
+    getTradeAdherenceHistory(),
+    getBadgeUnlocks(),
+    getWinRate(),
+    getAverageRiskReward("realized"),
+    get30DayAdherence(),
+    getEquityCurve(),
+    listTrades(),
+    getChecklistStatusForDate(today),
+    getChecklistStreaks(90),
+  ]);
 
   const { currentStreak, longestStreak } = computeStreaks(history);
   const recentBadges = [...badgeUnlocks].reverse().slice(0, 5);
@@ -40,10 +51,11 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <StreakCard currentStreak={currentStreak} longestStreak={longestStreak} />
         <QuickStats winRate={winRate} avgRealizedR={avgRealizedR} adherence30d={adherence30d} />
         <ChecklistStatusCard {...checklistStatus} />
+        <ChecklistStreakCard {...checklistStreaks} />
       </div>
 
       <Card>

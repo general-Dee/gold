@@ -2,7 +2,7 @@ import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { checklistCompletions, checklistItems } from "@/server/db/schema";
 import { DEFAULT_CHECKLIST_ITEMS } from "@/lib/constants";
-import { localDateKey } from "@/lib/dates";
+import { localDateKey, startOfLocalDay } from "@/lib/dates";
 
 export async function listActiveChecklistItems() {
   return db
@@ -78,9 +78,17 @@ export async function getChecklistStatusForDate(date: string) {
   return { total, completed, allDone: total > 0 && completed >= total };
 }
 
+export type ChecklistHistoryPoint = {
+  date: string;
+  completed: number;
+  total: number;
+  allDone: boolean;
+};
+
 /** Per-date completion counts for the last `days` days — feeds the history view and any
- * future correlation-with-journal-outcomes analytics. */
-export async function getChecklistHistory(days = 30) {
+ * future correlation-with-journal-outcomes analytics. Every day in the window is present
+ * (including zero-completion days), so this is safe to feed directly into streak logic. */
+export async function getChecklistHistory(days = 30): Promise<ChecklistHistoryPoint[]> {
   const since = new Date();
   since.setDate(since.getDate() - days);
   const sinceKey = localDateKey(since);
@@ -99,7 +107,41 @@ export async function getChecklistHistory(days = 30) {
     byDate.set(c.completionDate, (byDate.get(c.completionDate) ?? 0) + 1);
   }
 
-  return [...byDate.entries()]
-    .map(([date, completed]) => ({ date, completed, total: totalActiveAtQueryTime }))
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const result: ChecklistHistoryPoint[] = [];
+  const cursor = startOfLocalDay(since);
+  const today = startOfLocalDay();
+  while (cursor.getTime() <= today.getTime()) {
+    const date = localDateKey(cursor);
+    const completed = byDate.get(date) ?? 0;
+    result.push({
+      date,
+      completed,
+      total: totalActiveAtQueryTime,
+      allDone: totalActiveAtQueryTime > 0 && completed >= totalActiveAtQueryTime,
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return result;
+}
+
+/** Streak = consecutive fully-completed days in chronological order; any day that isn't
+ * fully done resets it to 0. Parallel to computeStreaks in gamification.ts — kept
+ * separate and checklist-specific rather than coupling the two systems. */
+export function computeChecklistStreaks(history: { allDone: boolean }[]) {
+  let streak = 0;
+  let longest = 0;
+  const streakAtDay: number[] = [];
+  for (const day of history) {
+    streak = day.allDone ? streak + 1 : 0;
+    longest = Math.max(longest, streak);
+    streakAtDay.push(streak);
+  }
+  return { streakAtDay, currentStreak: streak, longestStreak: longest };
+}
+
+/** Bounded to the last `days` days — there is no unbounded "all-time" checklist history
+ * query, so a streak that started before the window began will appear truncated. */
+export async function getChecklistStreaks(days = 90) {
+  return computeChecklistStreaks(await getChecklistHistory(days));
 }
