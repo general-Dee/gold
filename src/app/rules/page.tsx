@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { SortableTextList } from "@/components/shared/SortableTextList";
 import {
   archiveMoodTagAction,
   archiveRuleAction,
@@ -10,6 +11,8 @@ import {
   createMoodTagAction,
   createRuleAction,
   createSetupTagAction,
+  reorderRulesAction,
+  updateRuleTextAction,
 } from "@/server/actions/rules";
 import { listActiveMoodTags, listActiveRules, listActiveSetupTags } from "@/server/queries/rules";
 
@@ -35,24 +38,14 @@ export default async function RulesPage() {
           <CardTitle>Trading rules</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <ul className="flex flex-col gap-2">
-            {rules.map((rule) => (
-              <li
-                key={rule.id}
-                className="flex items-center justify-between gap-4 rounded-md border px-3 py-2 text-sm"
-              >
-                <span>{rule.text}</span>
-                <form action={archiveRuleAction.bind(null, rule.id)}>
-                  <Button type="submit" variant="ghost" size="sm">
-                    Archive
-                  </Button>
-                </form>
-              </li>
-            ))}
-            {rules.length === 0 && (
-              <li className="text-sm text-muted-foreground">No rules yet — add one below.</li>
-            )}
-          </ul>
+          <SortableTextList
+            id="rules"
+            items={rules}
+            onReorder={reorderRulesAction}
+            onEdit={updateRuleTextAction}
+            onArchive={archiveRuleAction}
+            emptyMessage="No rules yet — add one below."
+          />
           <Separator />
           <form action={createRuleAction} className="flex items-end gap-2">
             <div className="flex-1">

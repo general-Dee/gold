@@ -33,6 +33,18 @@ export async function archiveChecklistItem(id: string) {
     .where(eq(checklistItems.id, id));
 }
 
+export async function updateChecklistItemText(id: string, text: string) {
+  await db.update(checklistItems).set({ text }).where(eq(checklistItems.id, id));
+}
+
+export async function reorderChecklistItems(orderedIds: string[]) {
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      db.update(checklistItems).set({ sortOrder: index }).where(eq(checklistItems.id, id)),
+    ),
+  );
+}
+
 /** Seeds the default pre-market checklist items on first run only. */
 export async function seedDefaultChecklistItemsIfEmpty() {
   const existing = await db.select().from(checklistItems).limit(1);

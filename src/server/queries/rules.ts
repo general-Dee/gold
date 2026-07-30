@@ -32,6 +32,18 @@ export async function archiveRule(id: string) {
     .where(eq(rules.id, id));
 }
 
+export async function updateRuleText(id: string, text: string) {
+  await db.update(rules).set({ text }).where(eq(rules.id, id));
+}
+
+export async function reorderRules(orderedIds: string[]) {
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      db.update(rules).set({ sortOrder: index }).where(eq(rules.id, id)),
+    ),
+  );
+}
+
 export async function listActiveSetupTags() {
   return db.select().from(setupTags).where(eq(setupTags.isActive, true));
 }

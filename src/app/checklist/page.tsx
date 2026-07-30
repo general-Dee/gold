@@ -5,9 +5,12 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ChecklistHistoryChart } from "@/components/checklist/ChecklistHistoryChart";
 import { PreMarketChecklist } from "@/components/checklist/PreMarketChecklist";
+import { SortableTextList } from "@/components/shared/SortableTextList";
 import {
   archiveChecklistItemAction,
   createChecklistItemAction,
+  reorderChecklistItemsAction,
+  updateChecklistItemTextAction,
 } from "@/server/actions/checklist";
 import {
   computeChecklistStreaks,
@@ -72,24 +75,14 @@ export default async function ChecklistPage() {
           <CardTitle>Manage checklist items</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <ul className="flex flex-col gap-2">
-            {items.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-4 rounded-md border px-3 py-2 text-sm"
-              >
-                <span>{item.text}</span>
-                <form action={archiveChecklistItemAction.bind(null, item.id)}>
-                  <Button type="submit" variant="ghost" size="sm">
-                    Archive
-                  </Button>
-                </form>
-              </li>
-            ))}
-            {items.length === 0 && (
-              <li className="text-sm text-muted-foreground">No items yet — add one below.</li>
-            )}
-          </ul>
+          <SortableTextList
+            id="checklist-items"
+            items={items}
+            onReorder={reorderChecklistItemsAction}
+            onEdit={updateChecklistItemTextAction}
+            onArchive={archiveChecklistItemAction}
+            emptyMessage="No items yet — add one below."
+          />
           <Separator />
           <form action={createChecklistItemAction} className="flex items-end gap-2">
             <div className="flex-1">

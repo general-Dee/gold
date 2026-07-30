@@ -7,6 +7,8 @@ import {
   archiveChecklistItem,
   createChecklistItem,
   removeCompletion,
+  reorderChecklistItems,
+  updateChecklistItemText,
 } from "@/server/queries/checklist";
 
 export async function createChecklistItemAction(formData: FormData) {
@@ -17,6 +19,17 @@ export async function createChecklistItemAction(formData: FormData) {
 
 export async function archiveChecklistItemAction(id: string) {
   await archiveChecklistItem(id);
+  revalidatePath("/checklist");
+}
+
+export async function updateChecklistItemTextAction(id: string, text: string) {
+  const parsed = checklistItemSchema.parse({ text });
+  await updateChecklistItemText(id, parsed.text);
+  revalidatePath("/checklist");
+}
+
+export async function reorderChecklistItemsAction(orderedIds: string[]) {
+  await reorderChecklistItems(orderedIds);
   revalidatePath("/checklist");
 }
 

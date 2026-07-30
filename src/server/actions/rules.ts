@@ -8,6 +8,8 @@ import {
   createMoodTag,
   createRule,
   createSetupTag,
+  reorderRules,
+  updateRuleText,
 } from "@/server/queries/rules";
 import { moodTagSchema, ruleSchema, setupTagSchema } from "@/lib/validation";
 
@@ -19,6 +21,17 @@ export async function createRuleAction(formData: FormData) {
 
 export async function archiveRuleAction(id: string) {
   await archiveRule(id);
+  revalidatePath("/rules");
+}
+
+export async function updateRuleTextAction(id: string, text: string) {
+  const parsed = ruleSchema.parse({ text });
+  await updateRuleText(id, parsed.text);
+  revalidatePath("/rules");
+}
+
+export async function reorderRulesAction(orderedIds: string[]) {
+  await reorderRules(orderedIds);
   revalidatePath("/rules");
 }
 
