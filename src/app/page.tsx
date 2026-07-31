@@ -11,7 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAverageRiskReward, getEquityCurve, getWinRate, get30DayAdherence } from "@/server/queries/analytics";
 import { getCurrentBalance, getGoalProgress } from "@/server/queries/account";
 import { getChecklistStatusForDate, getChecklistStreaks } from "@/server/queries/checklist";
-import { getBadgeUnlocks, getTradeAdherenceHistory, computeStreaks } from "@/server/queries/gamification";
+import {
+  getBadgeUnlocks,
+  getTradeAdherenceHistory,
+  getMostRecentTradeViolations,
+  computeStreaks,
+} from "@/server/queries/gamification";
 import { listTrades } from "@/server/queries/trades";
 import { localDateKey } from "@/lib/dates";
 
@@ -29,6 +34,7 @@ export default async function DashboardPage() {
     checklistStreaks,
     balance,
     goalProgress,
+    violation,
   ] = await Promise.all([
     getTradeAdherenceHistory(),
     getBadgeUnlocks(),
@@ -41,6 +47,7 @@ export default async function DashboardPage() {
     getChecklistStreaks(90),
     getCurrentBalance(),
     getGoalProgress(),
+    getMostRecentTradeViolations(),
   ]);
 
   const { currentStreak, longestStreak } = computeStreaks(history);
@@ -55,6 +62,23 @@ export default async function DashboardPage() {
           Log new trade
         </Link>
       </div>
+
+      {violation && (
+        <Card className="bg-destructive/10">
+          <CardContent className="flex items-center justify-between gap-3 py-3">
+            <p className="text-sm">
+              <span className="font-medium text-destructive">Rule broken on your last trade:</span>{" "}
+              {violation.violatedRules.join(", ")}
+            </p>
+            <Link
+              href={`/trades/${violation.tradeId}`}
+              className="shrink-0 text-sm text-muted-foreground hover:text-foreground"
+            >
+              View trade →
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <StreakCard currentStreak={currentStreak} longestStreak={longestStreak} />

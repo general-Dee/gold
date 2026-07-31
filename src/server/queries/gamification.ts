@@ -1,4 +1,4 @@
-import { asc } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { badgeUnlocks, tradeRuleChecks, trades } from "@/server/db/schema";
 
@@ -82,4 +82,23 @@ export async function getMonthlyAverageAdherence(yearMonth: string) {
 
 export async function getBadgeUnlocks() {
   return db.select().from(badgeUnlocks).orderBy(asc(badgeUnlocks.unlockedAt));
+}
+
+export type TradeViolation = { tradeId: string; entryAt: string; violatedRules: string[] };
+
+/** Rules broken on the most recently logged trade, or null if it's clean (or there are no trades). */
+export async function getMostRecentTradeViolations(): Promise<TradeViolation | null> {
+  const [mostRecent] = await db.select().from(trades).orderBy(desc(trades.entryAt)).limit(1);
+  if (!mostRecent) return null;
+
+  const checks = await db
+    .select()
+    .from(tradeRuleChecks)
+    .where(eq(tradeRuleChecks.tradeId, mostRecent.id));
+  const violatedRules = checks
+    .filter((c) => c.status === "not_followed")
+    .map((c) => c.ruleTextSnapshot);
+
+  if (violatedRules.length === 0) return null;
+  return { tradeId: mostRecent.id, entryAt: mostRecent.entryAt, violatedRules };
 }
