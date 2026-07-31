@@ -16,6 +16,9 @@ export type DxyBias = (typeof DXY_BIASES)[number];
 export const CHECK_STATUSES = ["followed", "not_followed", "not_applicable"] as const;
 export type CheckStatus = (typeof CHECK_STATUSES)[number];
 
+export const TRANSACTION_TYPES = ["deposit", "withdrawal"] as const;
+export type TransactionType = (typeof TRANSACTION_TYPES)[number];
+
 export const DEFAULT_RULES = [
   "Waited for session open (no pre-market impulse entries)",
   "Risk sized at or below 1% of account",

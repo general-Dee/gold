@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAverageRiskReward, getEquityCurve, getWinRate, get30DayAdherence } from "@/server/queries/analytics";
+import { getCurrentBalance, getGoalProgress } from "@/server/queries/account";
 import { getChecklistStatusForDate, getChecklistStreaks } from "@/server/queries/checklist";
 import { getBadgeUnlocks, getTradeAdherenceHistory, computeStreaks } from "@/server/queries/gamification";
 import { listTrades } from "@/server/queries/trades";
@@ -26,6 +27,8 @@ export default async function DashboardPage() {
     trades,
     checklistStatus,
     checklistStreaks,
+    balance,
+    goalProgress,
   ] = await Promise.all([
     getTradeAdherenceHistory(),
     getBadgeUnlocks(),
@@ -36,6 +39,8 @@ export default async function DashboardPage() {
     listTrades(),
     getChecklistStatusForDate(today),
     getChecklistStreaks(90),
+    getCurrentBalance(),
+    getGoalProgress(),
   ]);
 
   const { currentStreak, longestStreak } = computeStreaks(history);
@@ -57,6 +62,25 @@ export default async function DashboardPage() {
         <ChecklistStatusCard {...checklistStatus} />
         <ChecklistStreakCard {...checklistStreaks} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Account balance</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <span className="text-2xl font-semibold tabular-nums">{balance.toFixed(2)}</span>
+          {goalProgress.monthToDateProfitPct != null && (
+            <span className="text-sm text-muted-foreground">
+              {goalProgress.monthToDateProfitPct >= 0 ? "+" : ""}
+              {goalProgress.monthToDateProfitPct.toFixed(2)}% this month
+            </span>
+          )}
+          {goalProgress.isOverDrawdownLimit && <Badge variant="destructive">Over drawdown limit</Badge>}
+          <Link href="/account" className="ml-auto text-sm text-muted-foreground hover:text-foreground">
+            View account →
+          </Link>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

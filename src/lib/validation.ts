@@ -6,6 +6,7 @@ import {
   OUTCOMES,
   SESSIONS,
   TRADE_STATUSES,
+  TRANSACTION_TYPES,
 } from "./constants";
 
 export const ruleCheckSchema = z.object({
@@ -63,3 +64,20 @@ export const moodTagSchema = z.object({
 export const checklistItemSchema = z.object({
   text: z.string().min(1, "Item text is required"),
 });
+
+export const accountSettingsSchema = z.object({
+  startingBalance: z.coerce.number(),
+  monthlyProfitTargetPct: z.coerce.number().nullable().optional(),
+  maxDrawdownLimitPct: z.coerce.number().nullable().optional(),
+});
+
+export type AccountSettingsInput = z.infer<typeof accountSettingsSchema>;
+
+export const accountTransactionSchema = z.object({
+  type: z.enum(TRANSACTION_TYPES),
+  amount: z.coerce.number().positive(),
+  occurredAt: z.string().min(1),
+  note: z.string().nullable().optional(),
+});
+
+export type AccountTransactionInput = z.infer<typeof accountTransactionSchema>;

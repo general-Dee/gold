@@ -123,6 +123,24 @@ export const checklistItems = sqliteTable("checklist_items", {
   ...timestamps,
 });
 
+export const accountSettings = sqliteTable("account_settings", {
+  id: id(),
+  startingBalance: real("starting_balance").notNull().default(0),
+  monthlyProfitTargetPct: real("monthly_profit_target_pct"),
+  maxDrawdownLimitPct: real("max_drawdown_limit_pct"),
+  ...timestamps,
+});
+
+export const accountTransactions = sqliteTable("account_transactions", {
+  id: id(),
+  // 'deposit' | 'withdrawal'
+  type: text("type").notNull(),
+  amount: real("amount").notNull(),
+  occurredAt: text("occurred_at").notNull(),
+  note: text("note"),
+  createdAt: timestamps.createdAt,
+});
+
 export const checklistCompletions = sqliteTable(
   "checklist_completions",
   {
