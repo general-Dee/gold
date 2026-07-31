@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RuleChecklist, type ChecklistRule } from "@/components/trades/RuleChecklist";
-import { plannedRiskReward, realizedRiskReward } from "@/lib/calculations";
+import { plannedRiskReward, realizedRiskReward, suggestPositionSize } from "@/lib/calculations";
 import {
   DXY_BIASES,
   DIRECTIONS,
@@ -45,6 +45,7 @@ export function TradeForm({
   initialTrade,
   initialChecks,
   onSubmitAction,
+  accountBalance,
 }: {
   rules: ChecklistRule[];
   setupTags: Option[];
@@ -52,6 +53,7 @@ export function TradeForm({
   initialTrade?: TradeInput & { id?: string };
   initialChecks?: { ruleId: string; status: CheckStatus }[];
   onSubmitAction: (input: TradeInput) => Promise<unknown>;
+  accountBalance: number;
 }) {
   const [isPending, startTransition] = useTransition();
   const [checklist, setChecklist] = useState<Record<string, CheckStatus>>(() => {
@@ -59,6 +61,7 @@ export function TradeForm({
     for (const c of initialChecks ?? []) map[c.ruleId] = c.status;
     return map;
   });
+  const [riskPct, setRiskPct] = useState(1);
 
   const now = new Date();
   const {
@@ -105,6 +108,16 @@ export function TradeForm({
       exitPrice: exitPrice ? Number(exitPrice) : null,
     });
   }, [direction, entryPrice, stopLoss, exitPrice]);
+
+  const suggestedPositionSize = useMemo(() => {
+    if (!entryPrice || !stopLoss) return null;
+    return suggestPositionSize({
+      accountBalance,
+      riskPct,
+      entryPrice: Number(entryPrice),
+      stopLoss: Number(stopLoss),
+    });
+  }, [accountBalance, riskPct, entryPrice, stopLoss]);
 
   const onSubmit = (values: TradeInput) => {
     const ruleChecks = Object.entries(checklist).map(([ruleId, status]) => ({
@@ -225,6 +238,35 @@ export function TradeForm({
             {errors.positionSize && (
               <p className="mt-1 text-xs text-destructive">{errors.positionSize.message}</p>
             )}
+            <div className="mt-2 flex items-end gap-2">
+              <div>
+                <Label htmlFor="riskPct" className="mb-1.5 block text-xs text-muted-foreground">
+                  Risk %
+                </Label>
+                <Input
+                  id="riskPct"
+                  type="number"
+                  step="any"
+                  className="w-20"
+                  value={riskPct}
+                  onChange={(e) => setRiskPct(Number(e.target.value))}
+                />
+              </div>
+              <p className="pb-1.5 text-xs text-muted-foreground">
+                {suggestedPositionSize != null ? `${suggestedPositionSize.toFixed(2)} lots` : "—"}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={suggestedPositionSize == null}
+                onClick={() => {
+                  if (suggestedPositionSize != null) setValue("positionSize", suggestedPositionSize);
+                }}
+              >
+                Use this
+              </Button>
+            </div>
           </div>
 
           <div>

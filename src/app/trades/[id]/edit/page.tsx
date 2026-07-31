@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { TradeForm, toDatetimeLocal } from "@/components/trades/TradeForm";
 import { updateTradeAction } from "@/server/actions/trades";
+import { getCurrentBalance } from "@/server/queries/account";
 import { listActiveMoodTags, listActiveRules, listActiveSetupTags } from "@/server/queries/rules";
 import { getTradeById } from "@/server/queries/trades";
 import type { CheckStatus } from "@/lib/constants";
@@ -11,11 +12,12 @@ export default async function EditTradePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [result, rules, setupTags, moodTags] = await Promise.all([
+  const [result, rules, setupTags, moodTags, accountBalance] = await Promise.all([
     getTradeById(id),
     listActiveRules(),
     listActiveSetupTags(),
     listActiveMoodTags(),
+    getCurrentBalance(),
   ]);
   if (!result) notFound();
   const { trade, checks } = result;
@@ -58,6 +60,7 @@ export default async function EditTradePage({
           status: c.status as CheckStatus,
         }))}
         onSubmitAction={(input) => updateTradeAction(trade.id, input)}
+        accountBalance={accountBalance}
       />
     </div>
   );

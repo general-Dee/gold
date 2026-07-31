@@ -39,3 +39,21 @@ export function realizedRiskReward(params: {
 }): number | null {
   return riskReward({ ...params, targetPrice: params.exitPrice });
 }
+
+/** This app only trades XAUUSD, where a standard lot is 100 oz — not a
+ * generic multi-instrument sizer. */
+const XAUUSD_LOT_SIZE_OZ = 100;
+
+export function suggestPositionSize(params: {
+  accountBalance: number;
+  riskPct: number;
+  entryPrice: number;
+  stopLoss: number;
+}): number | null {
+  const { accountBalance, riskPct, entryPrice, stopLoss } = params;
+  const stopDistance = Math.abs(entryPrice - stopLoss);
+  if (stopDistance === 0 || accountBalance <= 0 || riskPct <= 0) return null;
+
+  const riskAmount = accountBalance * (riskPct / 100);
+  return riskAmount / (stopDistance * XAUUSD_LOT_SIZE_OZ);
+}

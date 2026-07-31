@@ -1,12 +1,14 @@
 import { TradeForm } from "@/components/trades/TradeForm";
 import { createTradeAction } from "@/server/actions/trades";
+import { getCurrentBalance } from "@/server/queries/account";
 import { listActiveMoodTags, listActiveRules, listActiveSetupTags } from "@/server/queries/rules";
 
 export default async function NewTradePage() {
-  const [rules, setupTags, moodTags] = await Promise.all([
+  const [rules, setupTags, moodTags, accountBalance] = await Promise.all([
     listActiveRules(),
     listActiveSetupTags(),
     listActiveMoodTags(),
+    getCurrentBalance(),
   ]);
 
   return (
@@ -23,6 +25,7 @@ export default async function NewTradePage() {
         setupTags={setupTags}
         moodTags={moodTags}
         onSubmitAction={createTradeAction}
+        accountBalance={accountBalance}
       />
     </div>
   );

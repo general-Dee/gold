@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { riskReward, plannedRiskReward, realizedRiskReward } from "@/lib/calculations";
+import {
+  riskReward,
+  plannedRiskReward,
+  realizedRiskReward,
+  suggestPositionSize,
+} from "@/lib/calculations";
 
 describe("riskReward", () => {
   it("returns null when targetPrice is null", () => {
@@ -67,6 +72,45 @@ describe("realizedRiskReward", () => {
   it("returns null when exitPrice is null", () => {
     expect(
       realizedRiskReward({ direction: "long", entryPrice: 100, stopLoss: 90, exitPrice: null }),
+    ).toBeNull();
+  });
+});
+
+describe("suggestPositionSize", () => {
+  it("computes lots from risk amount over stop distance times the 100oz lot size", () => {
+    // 1% of 10000 = 100 risk, stop distance 10, lot size 100 -> 100 / (10 * 100) = 0.1 lots
+    expect(
+      suggestPositionSize({ accountBalance: 10000, riskPct: 1, entryPrice: 2000, stopLoss: 1990 }),
+    ).toBeCloseTo(0.1);
+  });
+
+  it("is direction-agnostic (uses the absolute stop distance)", () => {
+    expect(
+      suggestPositionSize({ accountBalance: 10000, riskPct: 1, entryPrice: 1990, stopLoss: 2000 }),
+    ).toBeCloseTo(0.1);
+  });
+
+  it("returns null when entryPrice equals stopLoss (zero stop distance)", () => {
+    expect(
+      suggestPositionSize({ accountBalance: 10000, riskPct: 1, entryPrice: 2000, stopLoss: 2000 }),
+    ).toBeNull();
+  });
+
+  it("returns null when the account balance is zero or negative", () => {
+    expect(
+      suggestPositionSize({ accountBalance: 0, riskPct: 1, entryPrice: 2000, stopLoss: 1990 }),
+    ).toBeNull();
+    expect(
+      suggestPositionSize({ accountBalance: -500, riskPct: 1, entryPrice: 2000, stopLoss: 1990 }),
+    ).toBeNull();
+  });
+
+  it("returns null when risk % is zero or negative", () => {
+    expect(
+      suggestPositionSize({ accountBalance: 10000, riskPct: 0, entryPrice: 2000, stopLoss: 1990 }),
+    ).toBeNull();
+    expect(
+      suggestPositionSize({ accountBalance: 10000, riskPct: -1, entryPrice: 2000, stopLoss: 1990 }),
     ).toBeNull();
   });
 });
