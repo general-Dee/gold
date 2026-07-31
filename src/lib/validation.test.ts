@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ruleCheckSchema,
   tradeSchema,
+  tradeImportRowSchema,
   ruleSchema,
   setupTagSchema,
   moodTagSchema,
@@ -99,6 +100,72 @@ describe("ruleSchema / setupTagSchema / checklistItemSchema", () => {
   it("accept non-empty text/name", () => {
     expect(ruleSchema.parse({ text: "Wait for confirmation" }).text).toBe(
       "Wait for confirmation",
+    );
+  });
+});
+
+const validImportRow = {
+  entryAt: "2026-07-30T08:00:00.000Z",
+  direction: "long",
+  entryPrice: "1950.5",
+  stopLoss: "1945",
+  positionSize: "1",
+  session: "london",
+};
+
+describe("tradeImportRowSchema", () => {
+  it("parses a minimal valid row, coercing numeric strings and applying defaults", () => {
+    const result = tradeImportRowSchema.parse(validImportRow);
+    expect(result.entryPrice).toBe(1950.5);
+    expect(result.stopLoss).toBe(1945);
+    expect(result.positionSize).toBe(1);
+    expect(result.instrument).toBe("XAUUSD");
+    expect(result.status).toBe("closed");
+    expect(result.newsNearby).toBe(false);
+  });
+
+  it("accepts setupTag/moodBefore/moodAfter as raw name strings", () => {
+    const result = tradeImportRowSchema.parse({
+      ...validImportRow,
+      setupTag: "London breakout, NY reversal",
+      moodBefore: "Calm",
+      moodAfter: "Relieved",
+    });
+    expect(result.setupTag).toBe("London breakout, NY reversal");
+    expect(result.moodBefore).toBe("Calm");
+    expect(result.moodAfter).toBe("Relieved");
+  });
+
+  it("fails when a required field is missing", () => {
+    const withoutDirection: Partial<typeof validImportRow> = { ...validImportRow };
+    delete withoutDirection.direction;
+    expect(tradeImportRowSchema.safeParse(withoutDirection).success).toBe(false);
+  });
+
+  it("fails on an invalid enum value", () => {
+    expect(
+      tradeImportRowSchema.safeParse({ ...validImportRow, session: "tokyo" }).success,
+    ).toBe(false);
+  });
+
+  it("accepts undefined optional numeric/nullable fields (empty CSV cells)", () => {
+    const result = tradeImportRowSchema.parse({
+      ...validImportRow,
+      exitPrice: undefined,
+      takeProfit: undefined,
+      outcome: undefined,
+      setupTag: undefined,
+    });
+    expect(result.exitPrice).toBeUndefined();
+    expect(result.setupTag).toBeUndefined();
+  });
+
+  it("coerces the newsNearby string 'true'/'false' to boolean", () => {
+    expect(tradeImportRowSchema.parse({ ...validImportRow, newsNearby: "true" }).newsNearby).toBe(
+      true,
+    );
+    expect(tradeImportRowSchema.parse({ ...validImportRow, newsNearby: "false" }).newsNearby).toBe(
+      false,
     );
   });
 });

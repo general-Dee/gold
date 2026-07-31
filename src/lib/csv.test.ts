@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toCsvField, rowsToCsv } from "@/lib/csv";
+import { toCsvField, rowsToCsv, parseCsvRows, rowsFromCsv } from "@/lib/csv";
 
 describe("toCsvField", () => {
   it("renders null and undefined as an empty string", () => {
@@ -42,5 +42,64 @@ describe("rowsToCsv", () => {
 
   it("renders an empty rows array as just the header line", () => {
     expect(rowsToCsv(["a", "b"], [])).toBe("a,b");
+  });
+});
+
+describe("parseCsvRows", () => {
+  it("round-trips plain fields", () => {
+    const csv = rowsToCsv(
+      ["direction", "note"],
+      [
+        ["long", "clean entry"],
+        ["short", "hesitated late"],
+      ],
+    );
+    expect(parseCsvRows(csv)).toEqual([
+      ["direction", "note"],
+      ["long", "clean entry"],
+      ["short", "hesitated late"],
+    ]);
+  });
+
+  it("round-trips fields with embedded commas", () => {
+    const csv = rowsToCsv(["setupTag"], [["London breakout, NY reversal"]]);
+    expect(parseCsvRows(csv)).toEqual([["setupTag"], ["London breakout, NY reversal"]]);
+  });
+
+  it("round-trips fields with embedded quotes", () => {
+    const csv = rowsToCsv(["note"], [['said "go long"']]);
+    expect(parseCsvRows(csv)).toEqual([["note"], ['said "go long"']]);
+  });
+
+  it("round-trips fields with embedded newlines", () => {
+    const csv = rowsToCsv(["note"], [["line one\nline two"]]);
+    expect(parseCsvRows(csv)).toEqual([["note"], ["line one\nline two"]]);
+  });
+
+  it("strips a leading UTF-8 BOM", () => {
+    const csv = "﻿a,b\r\n1,2";
+    expect(parseCsvRows(csv)).toEqual([
+      ["a", "b"],
+      ["1", "2"],
+    ]);
+  });
+
+  it("ignores a trailing blank line", () => {
+    expect(parseCsvRows("a,b\r\n1,2\r\n")).toEqual([
+      ["a", "b"],
+      ["1", "2"],
+    ]);
+  });
+});
+
+describe("rowsFromCsv", () => {
+  it("splits headers from data rows", () => {
+    expect(rowsFromCsv("a,b\r\n1,2\r\n3,4")).toEqual({
+      headers: ["a", "b"],
+      rows: [
+        ["1", "2"],
+        ["3", "4"],
+      ],
+    });
   });
 });

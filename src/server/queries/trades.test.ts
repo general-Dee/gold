@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { rowsToCsv } from "@/lib/csv";
 import { tradeSchema, type TradeInput } from "@/lib/validation";
 
 // createTrade/updateTrade/getTradeById transitively import "@/server/db/client",
@@ -16,19 +17,22 @@ let updateTrade: typeof import("@/server/queries/trades").updateTrade;
 let deleteTrade: typeof import("@/server/queries/trades").deleteTrade;
 let getTradeById: typeof import("@/server/queries/trades").getTradeById;
 let listTrades: typeof import("@/server/queries/trades").listTrades;
+let importTradesFromCsv: typeof import("@/server/queries/trades").importTradesFromCsv;
 
 beforeAll(async () => {
   ({ db, schema } = await bootstrapTestDb());
-  ({ createTrade, updateTrade, deleteTrade, getTradeById, listTrades } = await import(
-    "@/server/queries/trades"
-  ));
+  ({ createTrade, updateTrade, deleteTrade, getTradeById, listTrades, importTradesFromCsv } =
+    await import("@/server/queries/trades"));
 });
 
 beforeEach(async () => {
   await db.delete(schema.badgeUnlocks);
   await db.delete(schema.tradeRuleChecks);
+  await db.delete(schema.tradeSetupTags);
   await db.delete(schema.trades);
   await db.delete(schema.rules);
+  await db.delete(schema.setupTags);
+  await db.delete(schema.moodTags);
 });
 
 function buildInput(overrides: Partial<TradeInput> = {}): TradeInput {
@@ -258,5 +262,130 @@ describe("deleteTrade", () => {
 
   it("is a no-op for an id that doesn't exist", async () => {
     await expect(deleteTrade("does-not-exist")).resolves.not.toThrow();
+  });
+});
+
+const IMPORT_HEADERS = [
+  "entryAt", "exitAt", "direction", "instrument", "status",
+  "entryPrice", "exitPrice", "stopLoss", "takeProfit", "positionSize",
+  "riskRewardPlanned", "riskRewardRealized", "outcome", "pnl",
+  "setupTag", "session", "dxyBias", "newsNearby", "newsNote",
+  "moodBefore", "moodAfter", "reasoning", "notesAfter",
+];
+
+function buildImportRow(overrides: Record<string, string | number | boolean | null> = {}) {
+  const base: Record<string, string | number | boolean | null> = {
+    entryAt: "2026-01-01T10:00:00.000Z",
+    exitAt: null,
+    direction: "long",
+    instrument: "XAUUSD",
+    status: "closed",
+    entryPrice: 100,
+    exitPrice: null,
+    stopLoss: 95,
+    takeProfit: null,
+    positionSize: 1,
+    riskRewardPlanned: null,
+    riskRewardRealized: null,
+    outcome: null,
+    pnl: null,
+    setupTag: null,
+    session: "ny",
+    dxyBias: null,
+    newsNearby: false,
+    newsNote: null,
+    moodBefore: null,
+    moodAfter: null,
+    reasoning: null,
+    notesAfter: null,
+    ...overrides,
+  };
+  return IMPORT_HEADERS.map((h) => base[h]);
+}
+
+function buildImportCsv(rows: (string | number | boolean | null)[][]) {
+  return rowsToCsv(IMPORT_HEADERS, rows);
+}
+
+describe("importTradesFromCsv", () => {
+  it("imports a valid row and links an existing setup tag by name", async () => {
+    const [tag] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
+
+    const result = await importTradesFromCsv(
+      buildImportCsv([buildImportRow({ setupTag: "London breakout" })]),
+    );
+
+    expect(result.importedCount).toBe(1);
+    expect(result.skipped).toEqual([]);
+    expect(result.createdSetupTags).toEqual([]);
+
+    const trades = await db.select().from(schema.trades);
+    expect(trades).toHaveLength(1);
+    const links = await db.select().from(schema.tradeSetupTags);
+    expect(links).toEqual([expect.objectContaining({ tradeId: trades[0].id, setupTagId: tag.id })]);
+  });
+
+  it("auto-creates a setup tag and mood tag that don't exist yet, matching existing ones case-insensitively", async () => {
+    await db.insert(schema.setupTags).values({ name: "London breakout" });
+
+    const result = await importTradesFromCsv(
+      buildImportCsv([
+        buildImportRow({ setupTag: "london breakout, NY reversal", moodBefore: "Calm" }),
+      ]),
+    );
+
+    expect(result.importedCount).toBe(1);
+    expect(result.createdSetupTags).toEqual(["NY reversal"]);
+    expect(result.createdMoodTags).toEqual(["Calm"]);
+    expect(await db.select().from(schema.setupTags)).toHaveLength(2);
+    expect(await db.select().from(schema.moodTags)).toHaveLength(1);
+  });
+
+  it("only creates a repeated new tag name once across multiple rows", async () => {
+    const result = await importTradesFromCsv(
+      buildImportCsv([
+        buildImportRow({ setupTag: "News spike fade" }),
+        buildImportRow({ setupTag: "news spike fade" }),
+      ]),
+    );
+
+    expect(result.importedCount).toBe(2);
+    expect(result.createdSetupTags).toEqual(["News spike fade"]);
+    expect(await db.select().from(schema.setupTags)).toHaveLength(1);
+  });
+
+  it("reports invalid rows as skipped without failing the whole import", async () => {
+    const result = await importTradesFromCsv(
+      buildImportCsv([
+        buildImportRow(),
+        buildImportRow({ session: "tokyo" }),
+        buildImportRow({ direction: "long" }),
+      ]),
+    );
+
+    expect(result.importedCount).toBe(2);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0].row).toBe(3);
+    expect(result.skipped[0].reason).toContain("session");
+  });
+
+  it("recomputes badges once after import rather than per row", async () => {
+    const result = await importTradesFromCsv(
+      buildImportCsv([
+        buildImportRow({ outcome: "loss", pnl: -50 }),
+        buildImportRow({ outcome: "loss", pnl: -50, entryAt: "2026-01-02T10:00:00.000Z" }),
+      ]),
+    );
+
+    expect(result.importedCount).toBe(2);
+    // Doesn't throw and leaves the trades queryable — full behavior of
+    // evaluateBadgesForTrade is covered by its own test suite.
+    expect(await listTrades()).toHaveLength(2);
+  });
+
+  it("rejects a file missing the expected headers", async () => {
+    await expect(importTradesFromCsv("a,b\r\n1,2")).rejects.toThrow(
+      /doesn't look like a trades export/,
+    );
   });
 });

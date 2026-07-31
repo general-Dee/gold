@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ImportTradesDialog } from "@/components/trades/ImportTradesDialog";
 import { TradesFilterBar } from "@/components/trades/TradesFilterBar";
 import { parseTradeFilters } from "@/lib/tradeFilters";
 import { listActiveSetupTags } from "@/server/queries/rules";
@@ -47,6 +48,7 @@ export default async function TradesPage({
           >
             Export CSV
           </a>
+          <ImportTradesDialog />
           <Link href="/trades/new" className={buttonVariants()}>
             Log new trade
           </Link>
