@@ -17,3 +17,14 @@ export function startOfIsoWeek(d: Date = new Date()): Date {
   start.setDate(start.getDate() + diff);
   return start;
 }
+
+/** Calendar cells for a month grid, Sunday-first, padded with nulls so the
+ * grid aligns to weekday columns. `month` is 1-indexed (1 = January). */
+export function getMonthGrid(year: number, month: number): (Date | null)[] {
+  const first = new Date(year, month - 1, 1);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const leadingBlanks = first.getDay(); // 0=Sun..6=Sat
+  const days: (Date | null)[] = Array(leadingBlanks).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) days.push(new Date(year, month - 1, d));
+  return days;
+}

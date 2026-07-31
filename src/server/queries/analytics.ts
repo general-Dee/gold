@@ -1,6 +1,7 @@
-import { asc } from "drizzle-orm";
+import { and, asc, gte, lt } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { trades } from "@/server/db/schema";
+import { localDateKey } from "@/lib/dates";
 import { listActiveMoodTags, listActiveSetupTags } from "@/server/queries/rules";
 import { getTradeAdherenceHistory } from "./gamification";
 
@@ -163,4 +164,41 @@ export async function getAdherenceCorrelation() {
     adherent: summarizeTrades(tradesFor(history.filter((h) => h.isAdherent))),
     nonAdherent: summarizeTrades(tradesFor(history.filter((h) => !h.isAdherent))),
   };
+}
+
+export type DailyPnlPoint = {
+  date: string;
+  pnl: number;
+  r: number;
+  tradeCount: number;
+  wins: number;
+  losses: number;
+};
+
+/** month is 1-indexed. Only returns days that actually have trades — the
+ * caller fills the rest of the month grid with zero/no-data. */
+export async function getDailyPnlForMonth(year: number, month: number): Promise<DailyPnlPoint[]> {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
+
+  const monthTrades = await db
+    .select()
+    .from(trades)
+    .where(and(gte(trades.entryAt, start.toISOString()), lt(trades.entryAt, end.toISOString())));
+
+  const byDate = new Map<string, Trade[]>();
+  for (const t of monthTrades) {
+    const key = localDateKey(new Date(t.entryAt));
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key)!.push(t);
+  }
+
+  return [...byDate.entries()].map(([date, group]) => ({
+    date,
+    pnl: group.reduce((s, t) => s + (t.pnl ?? 0), 0),
+    r: group.reduce((s, t) => s + (t.riskRewardRealized ?? 0), 0),
+    tradeCount: group.length,
+    wins: group.filter((t) => t.outcome === "win").length,
+    losses: group.filter((t) => t.outcome === "loss").length,
+  }));
 }

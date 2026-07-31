@@ -237,6 +237,28 @@ describe("getBreakdownByDayOfWeek", () => {
   });
 });
 
+describe("getDailyPnlForMonth", () => {
+  it("groups trades within the month by local day and excludes adjacent months", async () => {
+    await addTrade({ entryAt: "2026-07-01T10:00:00.000Z", outcome: "win", pnl: 100, riskRewardRealized: 2 });
+    await addTrade({ entryAt: "2026-07-01T14:00:00.000Z", outcome: "loss", pnl: -30, riskRewardRealized: -1 });
+    await addTrade({ entryAt: "2026-07-15T10:00:00.000Z", outcome: "win", pnl: 50, riskRewardRealized: 1 });
+    await addTrade({ entryAt: "2026-06-15T12:00:00.000Z", outcome: "win", pnl: 999, riskRewardRealized: 9 });
+    await addTrade({ entryAt: "2026-08-15T12:00:00.000Z", outcome: "loss", pnl: -999, riskRewardRealized: -9 });
+
+    const result = await analytics.getDailyPnlForMonth(2026, 7);
+
+    expect(result).toHaveLength(2);
+    const jul1 = result.find((d) => d.date === "2026-07-01");
+    expect(jul1).toMatchObject({ pnl: 70, r: 1, tradeCount: 2, wins: 1, losses: 1 });
+    const jul15 = result.find((d) => d.date === "2026-07-15");
+    expect(jul15).toMatchObject({ pnl: 50, r: 1, tradeCount: 1, wins: 1, losses: 0 });
+  });
+
+  it("returns an empty array for a month with no trades", async () => {
+    expect(await analytics.getDailyPnlForMonth(2026, 7)).toEqual([]);
+  });
+});
+
 describe("getMaxDrawdown", () => {
   it("returns null when there are no trades", async () => {
     expect(await analytics.getMaxDrawdown()).toBeNull();
