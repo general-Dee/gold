@@ -1,6 +1,6 @@
 import { and, asc, gte, lt } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { trades } from "@/server/db/schema";
+import { tradeSetupTags, trades } from "@/server/db/schema";
 import { localDateKey } from "@/lib/dates";
 import { listActiveMoodTags, listActiveSetupTags } from "@/server/queries/rules";
 import { getTradeAdherenceHistory } from "./gamification";
@@ -41,13 +41,33 @@ async function breakdownBy(
     .sort((a, b) => b.count - a.count);
 }
 
+// A trade can carry more than one setup tag, so this can't use the generic
+// breakdownBy helper (which assumes one bucket per trade) — a trade with two
+// tags should land in both of their buckets.
 export async function getBreakdownBySetupTag(): Promise<BreakdownGroup[]> {
-  const tags = await listActiveSetupTags();
+  const [allTrades, tags, links] = await Promise.all([
+    closedTrades(),
+    listActiveSetupTags(),
+    db.select().from(tradeSetupTags),
+  ]);
   const nameById = new Map(tags.map((t) => [t.id, t.name]));
-  return breakdownBy(
-    (t) => t.setupTagId,
-    (id) => nameById.get(id) ?? "Unknown",
-  );
+  const tradeById = new Map(allTrades.map((t) => [t.id, t]));
+
+  const buckets = new Map<string, Trade[]>();
+  for (const link of links) {
+    const trade = tradeById.get(link.tradeId);
+    if (!trade) continue;
+    if (!buckets.has(link.setupTagId)) buckets.set(link.setupTagId, []);
+    buckets.get(link.setupTagId)!.push(trade);
+  }
+
+  return [...buckets.entries()]
+    .map(([tagId, group]) => ({
+      key: tagId,
+      label: nameById.get(tagId) ?? "Unknown",
+      ...summarizeTrades(group),
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 export async function getBreakdownBySession(): Promise<BreakdownGroup[]> {

@@ -28,7 +28,7 @@ export const tradeSchema = z.object({
   outcome: z.enum(OUTCOMES).nullable().optional(),
   pnl: z.coerce.number().nullable().optional(),
 
-  setupTagId: z.string().nullable().optional(),
+  setupTagIds: z.array(z.string()).default([]),
   session: z.enum(SESSIONS),
   dxyBias: z.enum(DXY_BIASES).nullable().optional(),
   newsNearby: z.coerce.boolean().default(false),

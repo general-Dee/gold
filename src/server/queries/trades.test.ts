@@ -68,6 +68,16 @@ describe("createTrade", () => {
     const found = await getTradeById(trade.id);
     expect(found?.checks).toEqual([]);
   });
+
+  it("links multiple setup tags to a trade", async () => {
+    const [tagA] = await db.insert(schema.setupTags).values({ name: "Tag A" }).returning();
+    const [tagB] = await db.insert(schema.setupTags).values({ name: "Tag B" }).returning();
+
+    const trade = await createTrade(buildInput({ setupTagIds: [tagA.id, tagB.id] }));
+
+    const found = await getTradeById(trade.id);
+    expect(found?.setupTagIds.sort()).toEqual([tagA.id, tagB.id].sort());
+  });
 });
 
 describe("updateTrade", () => {
@@ -98,6 +108,17 @@ describe("updateTrade", () => {
 
     const found = await getTradeById(trade.id);
     expect(found?.checks[0]).toMatchObject({ ruleTextSnapshot: "Changed text" });
+  });
+
+  it("wholesale-replaces setup tags rather than merging them", async () => {
+    const [tagA] = await db.insert(schema.setupTags).values({ name: "Tag A" }).returning();
+    const [tagB] = await db.insert(schema.setupTags).values({ name: "Tag B" }).returning();
+
+    const trade = await createTrade(buildInput({ setupTagIds: [tagA.id] }));
+    await updateTrade(trade.id, buildInput({ setupTagIds: [tagB.id] }));
+
+    const found = await getTradeById(trade.id);
+    expect(found?.setupTagIds).toEqual([tagB.id]);
   });
 });
 
@@ -160,12 +181,23 @@ describe("listTrades", () => {
   });
 
   it("filters by setup tag", async () => {
-    const [tag] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
-    const tagged = await createTrade(buildInput({ setupTagId: tag.id }));
+    const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
+    const [tagB] = await db.insert(schema.setupTags).values({ name: "Trend continuation" }).returning();
+    const tagged = await createTrade(buildInput({ setupTagIds: [tagA.id, tagB.id] }));
     await createTrade(buildInput());
 
-    const found = await listTrades({ setupTagId: tag.id });
-    expect(found.map((t) => t.id)).toEqual([tagged.id]);
+    const foundByA = await listTrades({ setupTagId: tagA.id });
+    expect(foundByA.map((t) => t.id)).toEqual([tagged.id]);
+
+    const foundByB = await listTrades({ setupTagId: tagB.id });
+    expect(foundByB.map((t) => t.id)).toEqual([tagged.id]);
+  });
+
+  it("returns an empty list when filtering by a setup tag no trade has", async () => {
+    const [tag] = await db.insert(schema.setupTags).values({ name: "Unused tag" }).returning();
+    await createTrade(buildInput());
+
+    expect(await listTrades({ setupTagId: tag.id })).toEqual([]);
   });
 
   it("searches across reasoning, notesAfter, and newsNote", async () => {

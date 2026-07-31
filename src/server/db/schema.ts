@@ -62,7 +62,6 @@ export const trades = sqliteTable("trades", {
   outcome: text("outcome"),
   pnl: real("pnl"),
 
-  setupTagId: text("setup_tag_id").references(() => setupTags.id),
   // 'asian' | 'london' | 'ny' | 'overlap' | 'other'
   session: text("session").notNull(),
   // 'up' | 'down' | 'flat'
@@ -91,6 +90,20 @@ export const tradeImages = sqliteTable("trade_images", {
   caption: text("caption"),
   createdAt: timestamps.createdAt,
 });
+
+export const tradeSetupTags = sqliteTable(
+  "trade_setup_tags",
+  {
+    id: id(),
+    tradeId: text("trade_id")
+      .notNull()
+      .references(() => trades.id, { onDelete: "cascade" }),
+    setupTagId: text("setup_tag_id")
+      .notNull()
+      .references(() => setupTags.id),
+  },
+  (table) => [uniqueIndex("trade_setup_tags_trade_tag_idx").on(table.tradeId, table.setupTagId)],
+);
 
 export const tradeRuleChecks = sqliteTable("trade_rule_checks", {
   id: id(),

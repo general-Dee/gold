@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DeleteTradeButton } from "@/components/trades/DeleteTradeButton";
 import { uploadTradeImageAction } from "@/server/actions/images";
+import { listActiveSetupTags } from "@/server/queries/rules";
 import { getTradeById } from "@/server/queries/trades";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
@@ -24,9 +25,10 @@ export default async function TradeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const result = await getTradeById(id);
+  const [result, setupTags] = await Promise.all([getTradeById(id), listActiveSetupTags()]);
   if (!result) notFound();
-  const { trade, checks, images } = result;
+  const { trade, checks, images, setupTagIds } = result;
+  const setupTagNames = setupTags.filter((t) => setupTagIds.includes(t.id)).map((t) => t.name);
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,6 +80,20 @@ export default async function TradeDetailPage({
             }
           />
           <Field label="P&L" value={trade.pnl} />
+          <Field
+            label="Setup tags"
+            value={
+              setupTagNames.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {setupTagNames.map((name) => (
+                    <Badge key={name} variant="secondary">
+                      {name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null
+            }
+          />
           <Field label="Session" value={trade.session} />
           <Field label="DXY bias" value={trade.dxyBias} />
           <Field label="News nearby" value={trade.newsNearby ? trade.newsNote || "Yes" : "No"} />

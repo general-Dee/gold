@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RuleChecklist, type ChecklistRule } from "@/components/trades/RuleChecklist";
 import { plannedRiskReward, realizedRiskReward, suggestPositionSize } from "@/lib/calculations";
+import { cn } from "@/lib/utils";
 import {
   DXY_BIASES,
   DIRECTIONS,
@@ -62,6 +63,7 @@ export function TradeForm({
     return map;
   });
   const [riskPct, setRiskPct] = useState(1);
+  const [setupTagIds, setSetupTagIds] = useState<string[]>(initialTrade?.setupTagIds ?? []);
 
   const now = new Date();
   const {
@@ -130,7 +132,13 @@ export function TradeForm({
 
     startTransition(async () => {
       try {
-        await onSubmitAction({ ...values, entryAt: entryAtIso, exitAt: exitAtIso, ruleChecks });
+        await onSubmitAction({
+          ...values,
+          entryAt: entryAtIso,
+          exitAt: exitAtIso,
+          ruleChecks,
+          setupTagIds,
+        });
       } catch (err) {
         // Next.js redirect() throws internally on success — only surface real errors.
         if (err instanceof Error && err.message.includes("NEXT_REDIRECT")) throw err;
@@ -181,21 +189,32 @@ export function TradeForm({
           </div>
 
           <div>
-            <Label htmlFor="setupTagId" className="mb-1.5 block">
-              Setup
-            </Label>
-            <select
-              id="setupTagId"
-              {...register("setupTagId", { setValueAs: optionalSelect })}
-              className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-            >
-              <option value="">—</option>
-              {setupTags.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+            <Label className="mb-1.5 block">Setup</Label>
+            {setupTags.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No setup tags yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {setupTags.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() =>
+                      setSetupTagIds((prev) =>
+                        prev.includes(t.id) ? prev.filter((id) => id !== t.id) : [...prev, t.id],
+                      )
+                    }
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      setupTagIds.includes(t.id)
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "hover:bg-accent",
+                    )}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

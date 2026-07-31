@@ -20,7 +20,7 @@ export default async function EditTradePage({
     getCurrentBalance(),
   ]);
   if (!result) notFound();
-  const { trade, checks } = result;
+  const { trade, checks, setupTagIds } = result;
 
   return (
     <div className="flex flex-col gap-6">
@@ -42,7 +42,7 @@ export default async function EditTradePage({
           positionSize: trade.positionSize,
           outcome: trade.outcome as "win" | "loss" | "breakeven" | null,
           pnl: trade.pnl,
-          setupTagId: trade.setupTagId,
+          setupTagIds,
           session: trade.session as never,
           dxyBias: trade.dxyBias as "up" | "down" | "flat" | null,
           newsNearby: trade.newsNearby,

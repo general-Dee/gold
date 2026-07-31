@@ -38,7 +38,7 @@ type TradeOverrides = {
   riskRewardPlanned?: number | null;
   riskRewardRealized?: number | null;
   session?: "asian" | "london" | "ny" | "overlap" | "other";
-  setupTagId?: string | null;
+  setupTagIds?: string[];
   moodBeforeId?: string | null;
 };
 
@@ -56,10 +56,16 @@ async function addTrade(opts: TradeOverrides) {
       pnl: opts.pnl ?? null,
       riskRewardPlanned: opts.riskRewardPlanned ?? null,
       riskRewardRealized: opts.riskRewardRealized ?? null,
-      setupTagId: opts.setupTagId ?? null,
       moodBeforeId: opts.moodBeforeId ?? null,
     })
     .returning();
+
+  if (opts.setupTagIds && opts.setupTagIds.length > 0) {
+    await db
+      .insert(schema.tradeSetupTags)
+      .values(opts.setupTagIds.map((setupTagId) => ({ tradeId: trade.id, setupTagId })));
+  }
+
   return trade;
 }
 
@@ -179,9 +185,9 @@ describe("getBreakdownBySetupTag", () => {
     const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
     const [tagB] = await db.insert(schema.setupTags).values({ name: "NY reversal" }).returning();
 
-    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, setupTagId: tagA.id });
-    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, setupTagId: tagA.id });
-    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, setupTagId: tagB.id });
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, setupTagIds: [tagA.id] });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, setupTagIds: [tagA.id] });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, setupTagIds: [tagB.id] });
     await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: "win", riskRewardRealized: 1 });
 
     const result = await analytics.getBreakdownBySetupTag();
@@ -190,6 +196,28 @@ describe("getBreakdownBySetupTag", () => {
       { key: tagA.id, label: "London breakout", count: 2, winRate: 0.5, avgR: 0.5 },
       { key: tagB.id, label: "NY reversal", count: 1, winRate: 1, avgR: 1 },
     ]);
+  });
+
+  it("counts a trade with multiple tags under every one of its tags", async () => {
+    const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
+    const [tagB] = await db.insert(schema.setupTags).values({ name: "Trend continuation" }).returning();
+
+    await addTrade({
+      entryAt: "2026-01-01T10:00:00.000Z",
+      outcome: "win",
+      riskRewardRealized: 2,
+      setupTagIds: [tagA.id, tagB.id],
+    });
+
+    const result = await analytics.getBreakdownBySetupTag();
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        { key: tagA.id, label: "London breakout", count: 1, winRate: 1, avgR: 2 },
+        { key: tagB.id, label: "Trend continuation", count: 1, winRate: 1, avgR: 2 },
+      ]),
+    );
+    expect(result).toHaveLength(2);
   });
 });
 
