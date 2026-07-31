@@ -9,22 +9,68 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { listTrades } from "@/server/queries/trades";
+import { TradesFilterBar } from "@/components/trades/TradesFilterBar";
+import { DIRECTIONS, OUTCOMES, SESSIONS } from "@/lib/constants";
+import { listActiveSetupTags } from "@/server/queries/rules";
+import { listTrades, type TradeFilters } from "@/server/queries/trades";
 
-export default async function TradesPage() {
-  const trades = await listTrades();
+function parseFilters(params: Record<string, string | string[] | undefined>): TradeFilters {
+  const get = (key: string) => {
+    const value = params[key];
+    return Array.isArray(value) ? value[0] : value;
+  };
+
+  const direction = get("direction");
+  const outcome = get("outcome");
+  const session = get("session");
+  const from = get("from");
+  const to = get("to");
+  const setupTagId = get("setupTagId");
+  const q = get("q");
+
+  return {
+    from: from ? `${from}T00:00:00.000Z` : undefined,
+    to: to ? `${to}T23:59:59.999Z` : undefined,
+    direction: DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])
+      ? (direction as (typeof DIRECTIONS)[number])
+      : undefined,
+    outcome: OUTCOMES.includes(outcome as (typeof OUTCOMES)[number])
+      ? (outcome as (typeof OUTCOMES)[number])
+      : undefined,
+    session: SESSIONS.includes(session as (typeof SESSIONS)[number])
+      ? (session as (typeof SESSIONS)[number])
+      : undefined,
+    setupTagId: setupTagId || undefined,
+    q: q || undefined,
+  };
+}
+
+export default async function TradesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const rawParams = await searchParams;
+  const filters = parseFilters(rawParams);
+  const hasFilters = Object.values(filters).some((v) => v !== undefined);
+
+  const [trades, setupTags] = await Promise.all([listTrades(filters), listActiveSetupTags()]);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Trades</h1>
-          <p className="text-sm text-muted-foreground">{trades.length} logged</p>
+          <p className="text-sm text-muted-foreground">
+            {trades.length} {hasFilters ? "matching" : "logged"}
+          </p>
         </div>
         <Link href="/trades/new" className={buttonVariants()}>
           Log new trade
         </Link>
       </div>
+
+      <TradesFilterBar setupTags={setupTags} />
 
       <div className="overflow-x-auto rounded-md border">
         <Table>
@@ -66,7 +112,7 @@ export default async function TradesPage() {
             {trades.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  No trades logged yet.
+                  {hasFilters ? "No trades match these filters." : "No trades logged yet."}
                 </TableCell>
               </TableRow>
             )}

@@ -1,15 +1,48 @@
 import { unlink } from "node:fs/promises";
 import path from "node:path";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { badgeUnlocks, rules, tradeImages, tradeRuleChecks, trades } from "@/server/db/schema";
 import { plannedRiskReward, realizedRiskReward } from "@/lib/calculations";
+import type { Direction, Outcome, Session } from "@/lib/constants";
 import type { TradeInput } from "@/lib/validation";
 
 const UPLOADS_DIR = path.join(process.cwd(), "data", "uploads");
 
-export async function listTrades() {
-  return db.select().from(trades).orderBy(desc(trades.entryAt));
+export type TradeFilters = {
+  from?: string;
+  to?: string;
+  direction?: Direction;
+  outcome?: Outcome;
+  session?: Session;
+  setupTagId?: string;
+  q?: string;
+};
+
+export async function listTrades(filters: TradeFilters = {}) {
+  const conditions = [];
+  if (filters.from) conditions.push(gte(trades.entryAt, filters.from));
+  if (filters.to) conditions.push(lte(trades.entryAt, filters.to));
+  if (filters.direction) conditions.push(eq(trades.direction, filters.direction));
+  if (filters.outcome) conditions.push(eq(trades.outcome, filters.outcome));
+  if (filters.session) conditions.push(eq(trades.session, filters.session));
+  if (filters.setupTagId) conditions.push(eq(trades.setupTagId, filters.setupTagId));
+  if (filters.q) {
+    const pattern = `%${filters.q}%`;
+    conditions.push(
+      or(
+        like(trades.reasoning, pattern),
+        like(trades.notesAfter, pattern),
+        like(trades.newsNote, pattern),
+      ),
+    );
+  }
+
+  return db
+    .select()
+    .from(trades)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(trades.entryAt));
 }
 
 export async function getTradeById(id: string) {

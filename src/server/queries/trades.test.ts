@@ -15,10 +15,13 @@ let createTrade: typeof import("@/server/queries/trades").createTrade;
 let updateTrade: typeof import("@/server/queries/trades").updateTrade;
 let deleteTrade: typeof import("@/server/queries/trades").deleteTrade;
 let getTradeById: typeof import("@/server/queries/trades").getTradeById;
+let listTrades: typeof import("@/server/queries/trades").listTrades;
 
 beforeAll(async () => {
   ({ db, schema } = await bootstrapTestDb());
-  ({ createTrade, updateTrade, deleteTrade, getTradeById } = await import("@/server/queries/trades"));
+  ({ createTrade, updateTrade, deleteTrade, getTradeById, listTrades } = await import(
+    "@/server/queries/trades"
+  ));
 });
 
 beforeEach(async () => {
@@ -109,6 +112,82 @@ describe("getTradeById", () => {
     expect(found?.trade.id).toBe(trade.id);
     expect(found?.checks).toEqual([]);
     expect(found?.images).toEqual([]);
+  });
+});
+
+describe("listTrades", () => {
+  it("returns all trades ordered by entryAt descending when no filters are given", async () => {
+    const early = await createTrade(buildInput({ entryAt: "2026-01-01T10:00:00.000Z" }));
+    const late = await createTrade(buildInput({ entryAt: "2026-01-05T10:00:00.000Z" }));
+
+    const found = await listTrades();
+    expect(found.map((t) => t.id)).toEqual([late.id, early.id]);
+  });
+
+  it("filters by date range", async () => {
+    const jan1 = await createTrade(buildInput({ entryAt: "2026-01-01T10:00:00.000Z" }));
+    await createTrade(buildInput({ entryAt: "2026-01-10T10:00:00.000Z" }));
+
+    const found = await listTrades({
+      from: "2026-01-01T00:00:00.000Z",
+      to: "2026-01-01T23:59:59.999Z",
+    });
+    expect(found.map((t) => t.id)).toEqual([jan1.id]);
+  });
+
+  it("filters by direction", async () => {
+    const long = await createTrade(buildInput({ direction: "long" }));
+    await createTrade(buildInput({ direction: "short" }));
+
+    const found = await listTrades({ direction: "long" });
+    expect(found.map((t) => t.id)).toEqual([long.id]);
+  });
+
+  it("filters by outcome", async () => {
+    const win = await createTrade(buildInput({ outcome: "win" }));
+    await createTrade(buildInput({ outcome: "loss" }));
+
+    const found = await listTrades({ outcome: "win" });
+    expect(found.map((t) => t.id)).toEqual([win.id]);
+  });
+
+  it("filters by session", async () => {
+    const ny = await createTrade(buildInput({ session: "ny" }));
+    await createTrade(buildInput({ session: "london" }));
+
+    const found = await listTrades({ session: "ny" });
+    expect(found.map((t) => t.id)).toEqual([ny.id]);
+  });
+
+  it("filters by setup tag", async () => {
+    const [tag] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
+    const tagged = await createTrade(buildInput({ setupTagId: tag.id }));
+    await createTrade(buildInput());
+
+    const found = await listTrades({ setupTagId: tag.id });
+    expect(found.map((t) => t.id)).toEqual([tagged.id]);
+  });
+
+  it("searches across reasoning, notesAfter, and newsNote", async () => {
+    const match = await createTrade(buildInput({ reasoning: "Waited for London breakout confirmation" }));
+    await createTrade(buildInput({ reasoning: "Unrelated setup" }));
+
+    const found = await listTrades({ q: "breakout" });
+    expect(found.map((t) => t.id)).toEqual([match.id]);
+  });
+
+  it("combines multiple filters with AND semantics", async () => {
+    const match = await createTrade(buildInput({ direction: "long", outcome: "win" }));
+    await createTrade(buildInput({ direction: "long", outcome: "loss" }));
+    await createTrade(buildInput({ direction: "short", outcome: "win" }));
+
+    const found = await listTrades({ direction: "long", outcome: "win" });
+    expect(found.map((t) => t.id)).toEqual([match.id]);
+  });
+
+  it("returns an empty list when no trades match", async () => {
+    await createTrade(buildInput({ direction: "long" }));
+    expect(await listTrades({ direction: "short" })).toEqual([]);
   });
 });
 
