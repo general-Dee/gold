@@ -10,40 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TradesFilterBar } from "@/components/trades/TradesFilterBar";
-import { DIRECTIONS, OUTCOMES, SESSIONS } from "@/lib/constants";
+import { parseTradeFilters } from "@/lib/tradeFilters";
 import { listActiveSetupTags } from "@/server/queries/rules";
-import { listTrades, type TradeFilters } from "@/server/queries/trades";
-
-function parseFilters(params: Record<string, string | string[] | undefined>): TradeFilters {
-  const get = (key: string) => {
-    const value = params[key];
-    return Array.isArray(value) ? value[0] : value;
-  };
-
-  const direction = get("direction");
-  const outcome = get("outcome");
-  const session = get("session");
-  const from = get("from");
-  const to = get("to");
-  const setupTagId = get("setupTagId");
-  const q = get("q");
-
-  return {
-    from: from ? `${from}T00:00:00.000Z` : undefined,
-    to: to ? `${to}T23:59:59.999Z` : undefined,
-    direction: DIRECTIONS.includes(direction as (typeof DIRECTIONS)[number])
-      ? (direction as (typeof DIRECTIONS)[number])
-      : undefined,
-    outcome: OUTCOMES.includes(outcome as (typeof OUTCOMES)[number])
-      ? (outcome as (typeof OUTCOMES)[number])
-      : undefined,
-    session: SESSIONS.includes(session as (typeof SESSIONS)[number])
-      ? (session as (typeof SESSIONS)[number])
-      : undefined,
-    setupTagId: setupTagId || undefined,
-    q: q || undefined,
-  };
-}
+import { listTrades } from "@/server/queries/trades";
 
 export default async function TradesPage({
   searchParams,
@@ -51,10 +20,16 @@ export default async function TradesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const rawParams = await searchParams;
-  const filters = parseFilters(rawParams);
+  const filters = parseTradeFilters(rawParams);
   const hasFilters = Object.values(filters).some((v) => v !== undefined);
 
   const [trades, setupTags] = await Promise.all([listTrades(filters), listActiveSetupTags()]);
+
+  const exportParams = new URLSearchParams(
+    Object.entries(rawParams).flatMap(([key, value]) =>
+      value == null ? [] : [[key, Array.isArray(value) ? value[0] : value]],
+    ),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -65,9 +40,17 @@ export default async function TradesPage({
             {trades.length} {hasFilters ? "matching" : "logged"}
           </p>
         </div>
-        <Link href="/trades/new" className={buttonVariants()}>
-          Log new trade
-        </Link>
+        <div className="flex gap-2">
+          <a
+            href={`/api/export/trades?${exportParams.toString()}`}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Export CSV
+          </a>
+          <Link href="/trades/new" className={buttonVariants()}>
+            Log new trade
+          </Link>
+        </div>
       </div>
 
       <TradesFilterBar setupTags={setupTags} />

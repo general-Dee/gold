@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -204,6 +204,17 @@ export default async function AccountPage() {
             </div>
             <Button type="submit">Add</Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <a href="/api/export/backup" className={buttonVariants({ variant: "outline" })}>
+            Download backup (.db)
+          </a>
         </CardContent>
       </Card>
     </div>
