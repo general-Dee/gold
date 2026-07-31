@@ -13,6 +13,7 @@ export type TradeAdherence = {
   /** followed / (followed + notFollowed); null when no applicable checklist items exist. */
   adherenceRatio: number | null;
   outcome: string | null;
+  riskRewardRealized: number | null;
 };
 
 export async function getTradeAdherenceHistory(): Promise<TradeAdherence[]> {
@@ -41,6 +42,7 @@ export async function getTradeAdherenceHistory(): Promise<TradeAdherence[]> {
       isAdherent: notFollowed === 0,
       adherenceRatio: applicable > 0 ? followed / applicable : null,
       outcome: t.outcome,
+      riskRewardRealized: t.riskRewardRealized,
     };
   });
 }

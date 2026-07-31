@@ -32,6 +32,7 @@ async function addTrade(opts: {
   entryAt: string;
   followed?: boolean;
   outcome?: "win" | "loss" | "breakeven" | null;
+  riskRewardRealized?: number | null;
 }) {
   const [trade] = await db
     .insert(schema.trades)
@@ -43,6 +44,7 @@ async function addTrade(opts: {
       session: "ny",
       entryAt: opts.entryAt,
       outcome: opts.outcome ?? null,
+      riskRewardRealized: opts.riskRewardRealized ?? null,
     })
     .returning();
 
@@ -173,5 +175,72 @@ describe("evaluateBadgesForTrade", () => {
 
     const unlocks = await evaluateBadgesForTrade(t2.id);
     expect(unlocks).toContainEqual({ badgeKey: "monthly_adherence:2026-04", tradeId: t2.id });
+  });
+
+  it("unlocks a profit-R milestone only once cumulative realized R crosses it", async () => {
+    const t1 = await addTrade({ entryAt: "2026-05-01T10:00:00.000Z", riskRewardRealized: 4 });
+    expect((await evaluateBadgesForTrade(t1.id)).map((u) => u.badgeKey)).not.toContain("profit_10r");
+
+    const t2 = await addTrade({ entryAt: "2026-05-02T10:00:00.000Z", riskRewardRealized: 5 });
+    expect((await evaluateBadgesForTrade(t2.id)).map((u) => u.badgeKey)).not.toContain("profit_10r");
+
+    const t3 = await addTrade({ entryAt: "2026-05-03T10:00:00.000Z", riskRewardRealized: 2 });
+    expect(await evaluateBadgesForTrade(t3.id)).toContainEqual({
+      badgeKey: "profit_10r",
+      tradeId: t3.id,
+    });
+  });
+
+  it("unlocks a win-streak milestone and resets it after a loss", async () => {
+    const t1 = await addTrade({ entryAt: "2026-06-01T10:00:00.000Z", outcome: "win" });
+    await evaluateBadgesForTrade(t1.id);
+    const t2 = await addTrade({ entryAt: "2026-06-02T10:00:00.000Z", outcome: "win" });
+    expect(await evaluateBadgesForTrade(t2.id)).toEqual([]);
+    const t3 = await addTrade({ entryAt: "2026-06-03T10:00:00.000Z", outcome: "win" });
+    expect(await evaluateBadgesForTrade(t3.id)).toContainEqual({
+      badgeKey: "win_streak_3",
+      tradeId: t3.id,
+    });
+
+    const broken = await addTrade({ entryAt: "2026-06-04T10:00:00.000Z", outcome: "loss" });
+    await evaluateBadgesForTrade(broken.id);
+    await addTrade({ entryAt: "2026-06-05T10:00:00.000Z", outcome: "win" });
+    const t6 = await addTrade({ entryAt: "2026-06-06T10:00:00.000Z", outcome: "win" });
+    expect(await evaluateBadgesForTrade(t6.id)).toEqual([]);
+  });
+
+  it("unlocks a big-win badge independently for two different qualifying trades", async () => {
+    const t1 = await addTrade({ entryAt: "2026-07-01T10:00:00.000Z", riskRewardRealized: 3 });
+    expect(await evaluateBadgesForTrade(t1.id)).toContainEqual({
+      badgeKey: "big_win_3r",
+      tradeId: t1.id,
+    });
+
+    const t2 = await addTrade({ entryAt: "2026-07-02T10:00:00.000Z", riskRewardRealized: 4 });
+    expect(await evaluateBadgesForTrade(t2.id)).toContainEqual({
+      badgeKey: "big_win_3r",
+      tradeId: t2.id,
+    });
+
+    const rows = await db.select().from(schema.badgeUnlocks);
+    expect(rows.filter((r) => r.badgeKey === "big_win_3r")).toHaveLength(2);
+  });
+
+  it("does not re-unlock big_win for the same trade on a later evaluation", async () => {
+    const t1 = await addTrade({ entryAt: "2026-08-01T10:00:00.000Z", riskRewardRealized: 3 });
+    await evaluateBadgesForTrade(t1.id);
+    const t2 = await addTrade({ entryAt: "2026-08-02T10:00:00.000Z" });
+    expect(await evaluateBadgesForTrade(t2.id)).toEqual([]);
+
+    const rows = await db.select().from(schema.badgeUnlocks);
+    expect(rows.filter((r) => r.badgeKey === "big_win_3r")).toHaveLength(1);
+  });
+
+  it("unlocks every big-win threshold a single trade crosses at once", async () => {
+    const t1 = await addTrade({ entryAt: "2026-09-01T10:00:00.000Z", riskRewardRealized: 12 });
+    const unlocks = await evaluateBadgesForTrade(t1.id);
+    expect(unlocks.map((u) => u.badgeKey)).toEqual(
+      expect.arrayContaining(["big_win_10r", "big_win_3r", "big_win_5r"]),
+    );
   });
 });

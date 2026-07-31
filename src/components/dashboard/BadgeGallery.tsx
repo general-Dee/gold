@@ -3,7 +3,15 @@ import { resolveBadge } from "@/server/gamification/badgeDefinitions";
 
 type Unlock = { id: string; badgeKey: string; unlockedAt: string };
 
-export function BadgeGallery({ unlocks, title = "Badges" }: { unlocks: Unlock[]; title?: string }) {
+export function BadgeGallery({
+  unlocks,
+  title = "Badges",
+  emptyMessage = "No badges yet — they unlock based on rule-adherence, not profit.",
+}: {
+  unlocks: Unlock[];
+  title?: string;
+  emptyMessage?: string;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -11,9 +19,7 @@ export function BadgeGallery({ unlocks, title = "Badges" }: { unlocks: Unlock[];
       </CardHeader>
       <CardContent>
         {unlocks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No badges yet — they unlock based on rule-adherence, not profit.
-          </p>
+          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {unlocks.map((u) => {

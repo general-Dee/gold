@@ -29,6 +29,7 @@ const makeAdherence = (isAdherent: boolean): TradeAdherence => ({
   isAdherent,
   adherenceRatio: isAdherent ? 1 : 0,
   outcome: null,
+  riskRewardRealized: null,
 });
 
 describe("computeStreaks", () => {

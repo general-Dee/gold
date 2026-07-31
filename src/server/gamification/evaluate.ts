@@ -1,12 +1,22 @@
 import { db } from "@/server/db/client";
 import { badgeUnlocks } from "@/server/db/schema";
-import { computeStreaks, getTradeAdherenceHistory } from "@/server/queries/gamification";
 import {
+  computeStreaks,
+  getTradeAdherenceHistory,
+  type TradeAdherence,
+} from "@/server/queries/gamification";
+import {
+  BIG_WIN_R_MILESTONES,
   COMEBACK_LENGTH,
   MONTHLY_ADHERENCE_THRESHOLD,
+  PROFIT_R_MILESTONES,
   STREAK_MILESTONES,
+  WIN_STREAK_MILESTONES,
+  bigWinBadge,
   monthlyAdherenceBadge,
+  profitMilestoneBadge,
   streakMilestoneBadge,
+  winStreakBadge,
 } from "./badgeDefinitions";
 
 type NewUnlock = { badgeKey: string; tradeId: string | null };
@@ -74,6 +84,44 @@ export async function evaluateBadgesForTrade(tradeId: string) {
       if (!hasKey(badge.key)) {
         const lastTradeOfMonth = monthTrades[monthTrades.length - 1];
         toInsert.push({ badgeKey: badge.key, tradeId: lastTradeOfMonth.tradeId });
+      }
+    }
+  }
+
+  // Performance badges — based on realized R, not rule-adherence (see
+  // badgeDefinitions.ts). Kept separate from the discipline badges above.
+
+  const cumulativeRAtTrade: number[] = [];
+  let runningR = 0;
+  for (const t of history) {
+    runningR += t.riskRewardRealized ?? 0;
+    cumulativeRAtTrade.push(runningR);
+  }
+  for (const n of PROFIT_R_MILESTONES) {
+    const badge = profitMilestoneBadge(n);
+    if (hasKey(badge.key)) continue;
+    const idx = cumulativeRAtTrade.findIndex((r) => r >= n);
+    if (idx !== -1) toInsert.push({ badgeKey: badge.key, tradeId: history[idx].tradeId });
+  }
+
+  const streakArray = (predicate: (t: TradeAdherence) => boolean): number[] => {
+    let streak = 0;
+    return history.map((t) => (streak = predicate(t) ? streak + 1 : 0));
+  };
+  const winStreakAtTrade = streakArray((t) => t.outcome === "win");
+  for (const n of WIN_STREAK_MILESTONES) {
+    const badge = winStreakBadge(n);
+    if (hasKey(badge.key)) continue;
+    const idx = winStreakAtTrade.findIndex((s) => s >= n);
+    if (idx !== -1) toInsert.push({ badgeKey: badge.key, tradeId: history[idx].tradeId });
+  }
+
+  for (const t of history) {
+    if (t.riskRewardRealized == null) continue;
+    for (const n of BIG_WIN_R_MILESTONES) {
+      const badge = bigWinBadge(n);
+      if (t.riskRewardRealized >= n && !hasKeyForTrade(badge.key, t.tradeId)) {
+        toInsert.push({ badgeKey: badge.key, tradeId: t.tradeId });
       }
     }
   }
