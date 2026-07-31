@@ -22,6 +22,8 @@ beforeEach(async () => {
   await db.delete(schema.tradeRuleChecks);
   await db.delete(schema.trades);
   await db.delete(schema.rules);
+  await db.delete(schema.setupTags);
+  await db.delete(schema.moodTags);
 
   const [ruleA] = await db.insert(schema.rules).values({ text: "Rule A" }).returning();
   const [ruleB] = await db.insert(schema.rules).values({ text: "Rule B" }).returning();
@@ -35,6 +37,9 @@ type TradeOverrides = {
   pnl?: number | null;
   riskRewardPlanned?: number | null;
   riskRewardRealized?: number | null;
+  session?: "asian" | "london" | "ny" | "overlap" | "other";
+  setupTagId?: string | null;
+  moodBeforeId?: string | null;
 };
 
 async function addTrade(opts: TradeOverrides) {
@@ -45,12 +50,14 @@ async function addTrade(opts: TradeOverrides) {
       entryPrice: 100,
       stopLoss: 95,
       positionSize: 1,
-      session: "ny",
+      session: opts.session ?? "ny",
       entryAt: opts.entryAt,
       outcome: opts.outcome ?? null,
       pnl: opts.pnl ?? null,
       riskRewardPlanned: opts.riskRewardPlanned ?? null,
       riskRewardRealized: opts.riskRewardRealized ?? null,
+      setupTagId: opts.setupTagId ?? null,
+      moodBeforeId: opts.moodBeforeId ?? null,
     })
     .returning();
   return trade;
@@ -164,5 +171,84 @@ describe("getAdherenceCorrelation", () => {
     const result = await analytics.getAdherenceCorrelation();
 
     expect(result.nonAdherent).toEqual({ count: 0, winRate: null, avgR: null });
+  });
+});
+
+describe("getBreakdownBySetupTag", () => {
+  it("groups by setup tag, sorted by trade count, and excludes untagged trades", async () => {
+    const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
+    const [tagB] = await db.insert(schema.setupTags).values({ name: "NY reversal" }).returning();
+
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, setupTagId: tagA.id });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, setupTagId: tagA.id });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, setupTagId: tagB.id });
+    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: "win", riskRewardRealized: 1 });
+
+    const result = await analytics.getBreakdownBySetupTag();
+
+    expect(result).toEqual([
+      { key: tagA.id, label: "London breakout", count: 2, winRate: 0.5, avgR: 0.5 },
+      { key: tagB.id, label: "NY reversal", count: 1, winRate: 1, avgR: 1 },
+    ]);
+  });
+});
+
+describe("getBreakdownBySession", () => {
+  it("groups trades by session", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", session: "london", outcome: "win", riskRewardRealized: 1 });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", session: "ny", outcome: "loss", riskRewardRealized: -1 });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", session: "ny", outcome: "win", riskRewardRealized: 2 });
+
+    const result = await analytics.getBreakdownBySession();
+
+    expect(result).toEqual([
+      { key: "ny", label: "ny", count: 2, winRate: 0.5, avgR: 0.5 },
+      { key: "london", label: "london", count: 1, winRate: 1, avgR: 1 },
+    ]);
+  });
+});
+
+describe("getBreakdownByMoodBefore", () => {
+  it("groups trades by mood-before tag and excludes trades with no mood set", async () => {
+    const [calm] = await db.insert(schema.moodTags).values({ name: "Calm", category: "before" }).returning();
+    const [fomo] = await db.insert(schema.moodTags).values({ name: "FOMO", category: "before" }).returning();
+
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, moodBeforeId: calm.id });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, moodBeforeId: fomo.id });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 2 });
+
+    const result = await analytics.getBreakdownByMoodBefore();
+
+    expect(result).toEqual([
+      { key: calm.id, label: "Calm", count: 1, winRate: 1, avgR: 1 },
+      { key: fomo.id, label: "FOMO", count: 1, winRate: 0, avgR: -1 },
+    ]);
+  });
+});
+
+describe("getBreakdownByDayOfWeek", () => {
+  it("labels each trade by its day of week and orders Sun through Sat", async () => {
+    await addTrade({ entryAt: "2026-01-05T10:00:00.000Z", outcome: "win", riskRewardRealized: 1 }); // Monday
+    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1 }); // Sunday
+
+    const result = await analytics.getBreakdownByDayOfWeek();
+
+    expect(result.map((r) => r.label)).toEqual(["Sun", "Mon"]);
+  });
+});
+
+describe("getMaxDrawdown", () => {
+  it("returns null when there are no trades", async () => {
+    expect(await analytics.getMaxDrawdown()).toBeNull();
+  });
+
+  it("computes the largest peak-to-trough decline in both pnl and R", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", pnl: 100, riskRewardRealized: 1 });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", pnl: 150, riskRewardRealized: 2 });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", pnl: -170, riskRewardRealized: -2 });
+    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", pnl: 220, riskRewardRealized: 3 });
+
+    const result = await analytics.getMaxDrawdown();
+    expect(result).toEqual({ maxDrawdownPnl: 170, maxDrawdownR: 2 });
   });
 });

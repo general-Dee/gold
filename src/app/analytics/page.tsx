@@ -1,4 +1,5 @@
 import { AdherenceTrendChart } from "@/components/analytics/AdherenceTrendChart";
+import { BreakdownBarChart } from "@/components/analytics/BreakdownBarChart";
 import { CorrelationChart } from "@/components/analytics/CorrelationChart";
 import { EquityCurveChart } from "@/components/analytics/EquityCurveChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +7,12 @@ import {
   getAdherenceCorrelation,
   getAdherenceTrend,
   getAverageRiskReward,
+  getBreakdownByDayOfWeek,
+  getBreakdownByMoodBefore,
+  getBreakdownBySession,
+  getBreakdownBySetupTag,
   getEquityCurve,
+  getMaxDrawdown,
   getWinRate,
 } from "@/server/queries/analytics";
 
@@ -14,21 +20,37 @@ const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`
 const rMultiple = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)}R`);
 
 export default async function AnalyticsPage() {
-  const [winRate, avgPlannedR, avgRealizedR, equity, adherenceTrend, correlation] =
-    await Promise.all([
-      getWinRate(),
-      getAverageRiskReward("planned"),
-      getAverageRiskReward("realized"),
-      getEquityCurve(),
-      getAdherenceTrend(),
-      getAdherenceCorrelation(),
-    ]);
+  const [
+    winRate,
+    avgPlannedR,
+    avgRealizedR,
+    equity,
+    adherenceTrend,
+    correlation,
+    maxDrawdown,
+    bySetupTag,
+    bySession,
+    byMoodBefore,
+    byDayOfWeek,
+  ] = await Promise.all([
+    getWinRate(),
+    getAverageRiskReward("planned"),
+    getAverageRiskReward("realized"),
+    getEquityCurve(),
+    getAdherenceTrend(),
+    getAdherenceCorrelation(),
+    getMaxDrawdown(),
+    getBreakdownBySetupTag(),
+    getBreakdownBySession(),
+    getBreakdownByMoodBefore(),
+    getBreakdownByDayOfWeek(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle>Win rate</CardTitle>
@@ -49,6 +71,14 @@ export default async function AnalyticsPage() {
           </CardHeader>
           <CardContent className="text-2xl font-semibold tabular-nums">
             {rMultiple(avgRealizedR)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Max drawdown</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold tabular-nums">
+            {maxDrawdown ? `-${maxDrawdown.maxDrawdownR.toFixed(2)}R` : "—"}
           </CardContent>
         </Card>
       </div>
@@ -77,6 +107,42 @@ export default async function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           <CorrelationChart adherent={correlation.adherent} nonAdherent={correlation.nonAdherent} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance by setup</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BreakdownBarChart groups={bySetupTag} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance by session</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BreakdownBarChart groups={bySession} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance by mood (before trade)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BreakdownBarChart groups={byMoodBefore} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance by day of week</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BreakdownBarChart groups={byDayOfWeek} />
         </CardContent>
       </Card>
     </div>
