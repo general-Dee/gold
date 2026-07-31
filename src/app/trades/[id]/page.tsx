@@ -1,12 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { DeleteTradeButton } from "@/components/trades/DeleteTradeButton";
-import { uploadTradeImageAction } from "@/server/actions/images";
+import { TradeImagesCard } from "@/components/trades/TradeImagesCard";
 import { listActiveSetupTags } from "@/server/queries/rules";
 import { getTradeById } from "@/server/queries/trades";
 
@@ -156,34 +154,8 @@ export default async function TradeDetailPage({
         <CardHeader>
           <CardTitle>Chart images</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {images.length > 0 && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {images.map((img) => (
-                <a key={img.id} href={`/api/uploads/${img.filePath}`} target="_blank">
-                  <Image
-                    src={`/api/uploads/${img.filePath}`}
-                    alt={img.caption ?? "Trade chart"}
-                    width={300}
-                    height={200}
-                    className="h-32 w-full rounded-md border object-cover"
-                    unoptimized
-                  />
-                </a>
-              ))}
-            </div>
-          )}
-          <form
-            action={uploadTradeImageAction.bind(null, trade.id)}
-            className="flex items-end gap-2"
-          >
-            <div className="flex-1">
-              <Input type="file" name="file" accept="image/*" required />
-            </div>
-            <Button type="submit" variant="outline">
-              Upload
-            </Button>
-          </form>
+        <CardContent>
+          <TradeImagesCard tradeId={trade.id} images={images} />
         </CardContent>
       </Card>
     </div>

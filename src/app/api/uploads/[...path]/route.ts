@@ -1,16 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-
-const UPLOADS_DIR = path.join(process.cwd(), "data", "uploads");
-
-const MIME_TYPES: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
+import { ALLOWED_IMAGE_MIME_TYPES } from "@/lib/uploads";
+import { UPLOADS_DIR } from "@/server/uploadsDir";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path: segments } = await params;
@@ -30,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
     const data = await readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
     return new NextResponse(new Uint8Array(data), {
-      headers: { "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream" },
+      headers: { "Content-Type": ALLOWED_IMAGE_MIME_TYPES[ext] ?? "application/octet-stream" },
     });
   } catch {
     return new NextResponse("Not found", { status: 404 });

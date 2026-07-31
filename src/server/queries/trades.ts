@@ -21,8 +21,7 @@ import {
   listActiveSetupTags,
 } from "@/server/queries/rules";
 import { evaluateBadgesForTrade } from "@/server/gamification/evaluate";
-
-const UPLOADS_DIR = path.join(process.cwd(), "data", "uploads");
+import { UPLOADS_DIR } from "@/server/uploadsDir";
 
 export type TradeFilters = {
   from?: string;

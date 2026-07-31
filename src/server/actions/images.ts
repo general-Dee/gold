@@ -1,30 +1,41 @@
 "use server";
 
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { revalidatePath } from "next/cache";
-import { nanoid } from "nanoid";
-import { db } from "@/server/db/client";
-import { tradeImages } from "@/server/db/schema";
+import { validateUploadFile } from "@/lib/uploads";
+import {
+  deleteTradeImage,
+  saveTradeImage,
+  updateTradeImageCaption,
+} from "@/server/queries/images";
 
-const UPLOADS_DIR = path.join(process.cwd(), "data", "uploads");
-
-export async function uploadTradeImageAction(tradeId: string, formData: FormData) {
+export async function uploadTradeImageAction(tradeId: string, formData: FormData): Promise<void> {
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return;
+  if (!(file instanceof File)) throw new Error("Please choose a file to upload.");
 
-  await mkdir(UPLOADS_DIR, { recursive: true });
+  const validationError = validateUploadFile(file);
+  if (validationError) throw new Error(validationError);
 
-  const ext = path.extname(file.name) || "";
-  const fileName = `${nanoid()}${ext}`;
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(path.join(UPLOADS_DIR, fileName), buffer);
+  const caption = (formData.get("caption") as string) || null;
+  await saveTradeImage(tradeId, { fileName: file.name, buffer }, caption);
 
-  await db.insert(tradeImages).values({
-    tradeId,
-    filePath: fileName,
-    caption: (formData.get("caption") as string) || null,
-  });
+  revalidatePath(`/trades/${tradeId}`);
+}
+
+export async function deleteTradeImageAction(imageId: string, tradeId: string): Promise<void> {
+  const result = await deleteTradeImage(imageId);
+  if (!result) throw new Error("Image not found.");
+
+  revalidatePath(`/trades/${tradeId}`);
+}
+
+export async function updateTradeImageCaptionAction(
+  imageId: string,
+  tradeId: string,
+  caption: string,
+): Promise<void> {
+  const result = await updateTradeImageCaption(imageId, caption);
+  if (!result) throw new Error("Image not found.");
 
   revalidatePath(`/trades/${tradeId}`);
 }
