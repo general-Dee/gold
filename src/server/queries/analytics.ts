@@ -11,7 +11,14 @@ async function closedTrades() {
   return db.select().from(trades).orderBy(asc(trades.entryAt));
 }
 
-export type GroupStats = { count: number; winRate: number | null; avgR: number | null };
+export type GroupStats = {
+  count: number;
+  winRate: number | null;
+  avgR: number | null;
+  totalPnl: number;
+  /** Average pnl per trade (of trades with a recorded pnl) — what this group actually earns per trade. */
+  expectancy: number | null;
+};
 
 function summarizeTrades(group: Trade[]): GroupStats {
   const decided = group.filter((t) => t.outcome === "win" || t.outcome === "loss");
@@ -19,7 +26,10 @@ function summarizeTrades(group: Trade[]): GroupStats {
     decided.length > 0 ? decided.filter((t) => t.outcome === "win").length / decided.length : null;
   const rValues = group.map((t) => t.riskRewardRealized).filter((v): v is number => v != null);
   const avgR = rValues.length > 0 ? rValues.reduce((s, v) => s + v, 0) / rValues.length : null;
-  return { count: group.length, winRate, avgR };
+  const pnlValues = group.map((t) => t.pnl).filter((v): v is number => v != null);
+  const totalPnl = pnlValues.reduce((s, v) => s + v, 0);
+  const expectancy = pnlValues.length > 0 ? totalPnl / pnlValues.length : null;
+  return { count: group.length, winRate, avgR, totalPnl, expectancy };
 }
 
 export type BreakdownGroup = { key: string; label: string } & GroupStats;

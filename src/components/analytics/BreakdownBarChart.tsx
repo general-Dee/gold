@@ -3,6 +3,8 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BreakdownGroup } from "@/server/queries/analytics";
 
+const money = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
+
 export function BreakdownBarChart({ groups }: { groups: BreakdownGroup[] }) {
   if (groups.length === 0) {
     return <p className="text-sm text-muted-foreground">Not enough trades yet.</p>;
@@ -52,6 +54,8 @@ export function BreakdownBarChart({ groups }: { groups: BreakdownGroup[] }) {
               {g.label} ({g.count})
             </div>
             <div>Avg R: {g.avgR != null ? `${g.avgR.toFixed(2)}R` : "—"}</div>
+            <div>Expectancy: {g.expectancy != null ? money(g.expectancy) : "—"}</div>
+            <div>Total P&L: {money(g.totalPnl)}</div>
           </div>
         ))}
       </div>

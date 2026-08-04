@@ -166,8 +166,8 @@ describe("getAdherenceCorrelation", () => {
 
     const result = await analytics.getAdherenceCorrelation();
 
-    expect(result.adherent).toEqual({ count: 2, winRate: 0.5, avgR: 0.5 });
-    expect(result.nonAdherent).toEqual({ count: 2, winRate: 1, avgR: 0.75 });
+    expect(result.adherent).toEqual({ count: 2, winRate: 0.5, avgR: 0.5, totalPnl: 0, expectancy: null });
+    expect(result.nonAdherent).toEqual({ count: 2, winRate: 1, avgR: 0.75, totalPnl: 0, expectancy: null });
   });
 
   it("returns a null winRate and avgR for an empty group instead of dividing by zero", async () => {
@@ -176,7 +176,7 @@ describe("getAdherenceCorrelation", () => {
 
     const result = await analytics.getAdherenceCorrelation();
 
-    expect(result.nonAdherent).toEqual({ count: 0, winRate: null, avgR: null });
+    expect(result.nonAdherent).toEqual({ count: 0, winRate: null, avgR: null, totalPnl: 0, expectancy: null });
   });
 });
 
@@ -185,16 +185,16 @@ describe("getBreakdownBySetupTag", () => {
     const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
     const [tagB] = await db.insert(schema.setupTags).values({ name: "NY reversal" }).returning();
 
-    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, setupTagIds: [tagA.id] });
-    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, setupTagIds: [tagA.id] });
-    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, setupTagIds: [tagB.id] });
-    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: "win", riskRewardRealized: 1 });
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, pnl: 200, setupTagIds: [tagA.id] });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, pnl: -100, setupTagIds: [tagA.id] });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, pnl: 150, setupTagIds: [tagB.id] });
+    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, pnl: 999 });
 
     const result = await analytics.getBreakdownBySetupTag();
 
     expect(result).toEqual([
-      { key: tagA.id, label: "London breakout", count: 2, winRate: 0.5, avgR: 0.5 },
-      { key: tagB.id, label: "NY reversal", count: 1, winRate: 1, avgR: 1 },
+      { key: tagA.id, label: "London breakout", count: 2, winRate: 0.5, avgR: 0.5, totalPnl: 100, expectancy: 50 },
+      { key: tagB.id, label: "NY reversal", count: 1, winRate: 1, avgR: 1, totalPnl: 150, expectancy: 150 },
     ]);
   });
 
@@ -206,6 +206,7 @@ describe("getBreakdownBySetupTag", () => {
       entryAt: "2026-01-01T10:00:00.000Z",
       outcome: "win",
       riskRewardRealized: 2,
+      pnl: 300,
       setupTagIds: [tagA.id, tagB.id],
     });
 
@@ -213,8 +214,8 @@ describe("getBreakdownBySetupTag", () => {
 
     expect(result).toEqual(
       expect.arrayContaining([
-        { key: tagA.id, label: "London breakout", count: 1, winRate: 1, avgR: 2 },
-        { key: tagB.id, label: "Trend continuation", count: 1, winRate: 1, avgR: 2 },
+        { key: tagA.id, label: "London breakout", count: 1, winRate: 1, avgR: 2, totalPnl: 300, expectancy: 300 },
+        { key: tagB.id, label: "Trend continuation", count: 1, winRate: 1, avgR: 2, totalPnl: 300, expectancy: 300 },
       ]),
     );
     expect(result).toHaveLength(2);
@@ -230,8 +231,8 @@ describe("getBreakdownBySession", () => {
     const result = await analytics.getBreakdownBySession();
 
     expect(result).toEqual([
-      { key: "ny", label: "ny", count: 2, winRate: 0.5, avgR: 0.5 },
-      { key: "london", label: "london", count: 1, winRate: 1, avgR: 1 },
+      { key: "ny", label: "ny", count: 2, winRate: 0.5, avgR: 0.5, totalPnl: 0, expectancy: null },
+      { key: "london", label: "london", count: 1, winRate: 1, avgR: 1, totalPnl: 0, expectancy: null },
     ]);
   });
 });
@@ -248,8 +249,8 @@ describe("getBreakdownByMoodBefore", () => {
     const result = await analytics.getBreakdownByMoodBefore();
 
     expect(result).toEqual([
-      { key: calm.id, label: "Calm", count: 1, winRate: 1, avgR: 1 },
-      { key: fomo.id, label: "FOMO", count: 1, winRate: 0, avgR: -1 },
+      { key: calm.id, label: "Calm", count: 1, winRate: 1, avgR: 1, totalPnl: 0, expectancy: null },
+      { key: fomo.id, label: "FOMO", count: 1, winRate: 0, avgR: -1, totalPnl: 0, expectancy: null },
     ]);
   });
 });
