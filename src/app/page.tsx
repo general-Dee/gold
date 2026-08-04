@@ -80,6 +80,34 @@ export default async function DashboardPage() {
         </Card>
       )}
 
+      {goalProgress.isOverDrawdownLimit && (
+        <Card className="bg-destructive/10">
+          <CardContent className="flex items-center justify-between gap-3 py-3">
+            <p className="text-sm">
+              <span className="font-medium text-destructive">Drawdown limit exceeded:</span>{" "}
+              {goalProgress.currentDrawdownPct?.toFixed(2)}% (limit {goalProgress.maxDrawdownLimitPct}%)
+            </p>
+            <Link href="/account" className="shrink-0 text-sm text-muted-foreground hover:text-foreground">
+              View account →
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {goalProgress.isTargetReached && (
+        <Card className="bg-primary/10">
+          <CardContent className="flex items-center justify-between gap-3 py-3">
+            <p className="text-sm">
+              <span className="font-medium">Monthly profit target reached:</span>{" "}
+              +{goalProgress.monthToDateProfitPct?.toFixed(2)}% (target {goalProgress.monthlyProfitTargetPct}%)
+            </p>
+            <Link href="/account" className="shrink-0 text-sm text-muted-foreground hover:text-foreground">
+              View account →
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <StreakCard currentStreak={currentStreak} longestStreak={longestStreak} />
         <QuickStats winRate={winRate} avgRealizedR={avgRealizedR} adherence30d={adherence30d} />
@@ -99,7 +127,6 @@ export default async function DashboardPage() {
               {goalProgress.monthToDateProfitPct.toFixed(2)}% this month
             </span>
           )}
-          {goalProgress.isOverDrawdownLimit && <Badge variant="destructive">Over drawdown limit</Badge>}
           <Link href="/account" className="ml-auto text-sm text-muted-foreground hover:text-foreground">
             View account →
           </Link>

@@ -92,6 +92,7 @@ export type GoalProgress = {
   maxDrawdownLimitPct: number | null;
   currentDrawdownPct: number | null;
   isOverDrawdownLimit: boolean;
+  isTargetReached: boolean;
 };
 
 export async function getGoalProgress(): Promise<GoalProgress> {
@@ -117,11 +118,17 @@ export async function getGoalProgress(): Promise<GoalProgress> {
     currentDrawdownPct != null &&
     currentDrawdownPct > settings.maxDrawdownLimitPct;
 
+  const isTargetReached =
+    settings.monthlyProfitTargetPct != null &&
+    monthToDateProfitPct != null &&
+    monthToDateProfitPct >= settings.monthlyProfitTargetPct;
+
   return {
     monthlyProfitTargetPct: settings.monthlyProfitTargetPct,
     monthToDateProfitPct,
     maxDrawdownLimitPct: settings.maxDrawdownLimitPct,
     currentDrawdownPct,
     isOverDrawdownLimit,
+    isTargetReached,
   };
 }

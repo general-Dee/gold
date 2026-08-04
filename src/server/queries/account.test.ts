@@ -182,4 +182,36 @@ describe("getGoalProgress", () => {
     const progress = await account.getGoalProgress();
     expect(progress.monthToDateProfitPct).toBeCloseTo(10, 5);
   });
+
+  it("flags isTargetReached once month-to-date profit meets the configured target", async () => {
+    await account.seedDefaultAccountSettingsIfEmpty();
+    await account.updateAccountSettings({ startingBalance: 1000, monthlyProfitTargetPct: 5 });
+
+    const now = new Date();
+    const earlierThisMonth = new Date(now.getFullYear(), now.getMonth(), 1, 12).toISOString();
+    await addTrade(earlierThisMonth, 100);
+
+    const progress = await account.getGoalProgress();
+    expect(progress.isTargetReached).toBe(true);
+  });
+
+  it("does not flag isTargetReached when month-to-date profit falls short of the target", async () => {
+    await account.seedDefaultAccountSettingsIfEmpty();
+    await account.updateAccountSettings({ startingBalance: 1000, monthlyProfitTargetPct: 20 });
+
+    const now = new Date();
+    const earlierThisMonth = new Date(now.getFullYear(), now.getMonth(), 1, 12).toISOString();
+    await addTrade(earlierThisMonth, 100);
+
+    const progress = await account.getGoalProgress();
+    expect(progress.isTargetReached).toBe(false);
+  });
+
+  it("does not flag isTargetReached when no target is configured", async () => {
+    await account.seedDefaultAccountSettingsIfEmpty();
+    await account.updateAccountSettings({ startingBalance: 1000 });
+
+    const progress = await account.getGoalProgress();
+    expect(progress.isTargetReached).toBe(false);
+  });
 });
