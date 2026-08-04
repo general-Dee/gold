@@ -32,16 +32,19 @@ export default async function TradeDetailPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight capitalize">
-            {trade.direction} {trade.instrument}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight capitalize">
+              {trade.direction} {trade.instrument}
+            </h1>
+            <Badge variant={trade.status === "open" ? "default" : "outline"}>{trade.status}</Badge>
+          </div>
           <p className="text-sm text-muted-foreground">
             {new Date(trade.entryAt).toLocaleString()}
           </p>
         </div>
         <div className="flex gap-2">
           <Link href={`/trades/${trade.id}/edit`} className={buttonVariants({ variant: "outline" })}>
-            Edit
+            {trade.status === "open" ? "Close trade" : "Edit"}
           </Link>
           <DeleteTradeButton tradeId={trade.id} />
         </div>

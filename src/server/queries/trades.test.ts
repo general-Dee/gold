@@ -176,6 +176,14 @@ describe("listTrades", () => {
     expect(found.map((t) => t.id)).toEqual([win.id]);
   });
 
+  it("filters by status", async () => {
+    const open = await createTrade(buildInput({ status: "open" }));
+    await createTrade(buildInput({ status: "closed" }));
+
+    const found = await listTrades({ status: "open" });
+    expect(found.map((t) => t.id)).toEqual([open.id]);
+  });
+
   it("filters by session", async () => {
     const ny = await createTrade(buildInput({ session: "ny" }));
     await createTrade(buildInput({ session: "london" }));

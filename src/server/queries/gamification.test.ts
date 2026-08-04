@@ -91,7 +91,11 @@ describe("db-backed gamification queries", () => {
     ruleBId = ruleB.id;
   });
 
-  async function addTrade(entryAt: string, outcome: "win" | "loss" | "breakeven" | null = null) {
+  async function addTrade(
+    entryAt: string,
+    outcome: "win" | "loss" | "breakeven" | null = null,
+    status: "open" | "closed" = "closed",
+  ) {
     const [trade] = await db
       .insert(schema.trades)
       .values({
@@ -102,6 +106,7 @@ describe("db-backed gamification queries", () => {
         session: "ny",
         entryAt,
         outcome,
+        status,
       })
       .returning();
     return trade;
@@ -185,6 +190,14 @@ describe("db-backed gamification queries", () => {
       const history = await getTradeAdherenceHistory();
       expect(history.map((h) => h.tradeId)).toEqual([t1.id, t2.id]);
     });
+
+    it("still includes open trades — adherence is knowable at entry, before the trade closes", async () => {
+      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "open");
+      await addCheck(t.id, ruleAId, "not_followed");
+
+      const [entry] = await getTradeAdherenceHistory();
+      expect(entry).toMatchObject({ tradeId: t.id, isAdherent: false });
+    });
   });
 
   describe("getMonthlyAverageAdherence", () => {
@@ -248,6 +261,18 @@ describe("db-backed gamification queries", () => {
       await addCheck(insertedLast.id, ruleAId, "not_followed", "Should not surface");
 
       expect(await getMostRecentTradeViolations()).toBeNull();
+    });
+
+    it("surfaces a violation on the most recent trade even while it's still open", async () => {
+      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "open");
+      await addCheck(t.id, ruleAId, "not_followed", "Max 2 trades today");
+
+      const result = await getMostRecentTradeViolations();
+      expect(result).toEqual({
+        tradeId: t.id,
+        entryAt: t.entryAt,
+        violatedRules: ["Max 2 trades today"],
+      });
     });
   });
 });

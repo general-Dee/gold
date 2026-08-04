@@ -40,6 +40,7 @@ type TradeOverrides = {
   session?: "asian" | "london" | "ny" | "overlap" | "other";
   setupTagIds?: string[];
   moodBeforeId?: string | null;
+  status?: "open" | "closed";
 };
 
 async function addTrade(opts: TradeOverrides) {
@@ -52,6 +53,7 @@ async function addTrade(opts: TradeOverrides) {
       positionSize: 1,
       session: opts.session ?? "ny",
       entryAt: opts.entryAt,
+      status: opts.status ?? "closed",
       outcome: opts.outcome ?? null,
       pnl: opts.pnl ?? null,
       riskRewardPlanned: opts.riskRewardPlanned ?? null,
@@ -99,6 +101,14 @@ describe("getWinRate", () => {
 
     expect(await analytics.getWinRate()).toBeCloseTo(2 / 3);
   });
+
+  it("excludes open trades even if they carry an outcome", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win" });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss" });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", status: "open" });
+
+    expect(await analytics.getWinRate()).toBeCloseTo(0.5);
+  });
 });
 
 describe("getAverageRiskReward", () => {
@@ -116,6 +126,13 @@ describe("getAverageRiskReward", () => {
     expect(await analytics.getAverageRiskReward("planned")).toBeCloseTo(3);
     expect(await analytics.getAverageRiskReward("realized")).toBeCloseTo(2);
   });
+
+  it("excludes open trades even if they carry a realized R", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", riskRewardRealized: 2 });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", riskRewardRealized: 10, status: "open" });
+
+    expect(await analytics.getAverageRiskReward("realized")).toBeCloseTo(2);
+  });
 });
 
 describe("getEquityCurve", () => {
@@ -127,6 +144,20 @@ describe("getEquityCurve", () => {
     const curve = await analytics.getEquityCurve();
     expect(curve.map((p) => p.cumulativePnl)).toEqual([100, 100, 50]);
     expect(curve.map((p) => p.cumulativeR)).toEqual([1, 3, 3]);
+  });
+
+  it("excludes open trades from the curve entirely", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", pnl: 100, riskRewardRealized: 1 });
+    await addTrade({
+      entryAt: "2026-01-02T10:00:00.000Z",
+      pnl: 9999,
+      riskRewardRealized: 99,
+      status: "open",
+    });
+
+    const curve = await analytics.getEquityCurve();
+    expect(curve).toHaveLength(1);
+    expect(curve[0]).toMatchObject({ cumulativePnl: 100, cumulativeR: 1 });
   });
 });
 
@@ -235,6 +266,23 @@ describe("getBreakdownBySession", () => {
       { key: "london", label: "london", count: 1, winRate: 1, avgR: 1, totalPnl: 0, expectancy: null },
     ]);
   });
+
+  it("excludes open trades from group counts", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", session: "ny", outcome: "win", riskRewardRealized: 1 });
+    await addTrade({
+      entryAt: "2026-01-02T10:00:00.000Z",
+      session: "ny",
+      outcome: "win",
+      riskRewardRealized: 1,
+      status: "open",
+    });
+
+    const result = await analytics.getBreakdownBySession();
+
+    expect(result).toEqual([
+      { key: "ny", label: "ny", count: 1, winRate: 1, avgR: 1, totalPnl: 0, expectancy: null },
+    ]);
+  });
 });
 
 describe("getBreakdownByMoodBefore", () => {
@@ -285,6 +333,22 @@ describe("getDailyPnlForMonth", () => {
 
   it("returns an empty array for a month with no trades", async () => {
     expect(await analytics.getDailyPnlForMonth(2026, 7)).toEqual([]);
+  });
+
+  it("excludes open trades from daily aggregates", async () => {
+    await addTrade({ entryAt: "2026-07-01T10:00:00.000Z", outcome: "win", pnl: 100, riskRewardRealized: 2 });
+    await addTrade({
+      entryAt: "2026-07-01T14:00:00.000Z",
+      outcome: "win",
+      pnl: 9999,
+      riskRewardRealized: 99,
+      status: "open",
+    });
+
+    const result = await analytics.getDailyPnlForMonth(2026, 7);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ pnl: 100, r: 2, tradeCount: 1, wins: 1, losses: 0 });
   });
 });
 

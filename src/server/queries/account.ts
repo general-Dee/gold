@@ -62,6 +62,8 @@ export async function getAccountEquityCurve(): Promise<BalancePoint[]> {
   const [trades, txns] = await Promise.all([listTrades(), listAccountTransactions()]);
 
   const events = [
+    // This filter also excludes open trades (no pnl yet) from the balance curve —
+    // an open trade shouldn't move the account balance until it's closed.
     ...trades
       .filter((t) => t.pnl != null)
       .map((t) => ({ at: t.entryAt, delta: t.pnl as number, kind: "trade" as const })),

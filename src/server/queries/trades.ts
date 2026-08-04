@@ -12,7 +12,7 @@ import {
 } from "@/server/db/schema";
 import { plannedRiskReward, realizedRiskReward } from "@/lib/calculations";
 import { rowsFromCsv } from "@/lib/csv";
-import type { Direction, Outcome, Session } from "@/lib/constants";
+import type { Direction, Outcome, Session, TradeStatus } from "@/lib/constants";
 import { tradeImportRowSchema, type TradeInput } from "@/lib/validation";
 import {
   createMoodTag,
@@ -29,6 +29,7 @@ export type TradeFilters = {
   direction?: Direction;
   outcome?: Outcome;
   session?: Session;
+  status?: TradeStatus;
   setupTagId?: string;
   q?: string;
 };
@@ -40,6 +41,7 @@ export async function listTrades(filters: TradeFilters = {}) {
   if (filters.direction) conditions.push(eq(trades.direction, filters.direction));
   if (filters.outcome) conditions.push(eq(trades.outcome, filters.outcome));
   if (filters.session) conditions.push(eq(trades.session, filters.session));
+  if (filters.status) conditions.push(eq(trades.status, filters.status));
   if (filters.setupTagId) {
     const links = await db
       .select({ tradeId: tradeSetupTags.tradeId })

@@ -17,6 +17,7 @@ import {
   DIRECTIONS,
   OUTCOMES,
   SESSIONS,
+  TRADE_STATUSES,
   sessionFromEntryTime,
   type CheckStatus,
 } from "@/lib/constants";
@@ -181,6 +182,23 @@ export function TradeForm({
               className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
             >
               {SESSIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <Label htmlFor="status" className="mb-1.5 block">
+              Status
+            </Label>
+            <select
+              id="status"
+              {...register("status")}
+              className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            >
+              {TRADE_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>

@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DIRECTIONS, OUTCOMES, SESSIONS } from "@/lib/constants";
+import { DIRECTIONS, OUTCOMES, SESSIONS, TRADE_STATUSES } from "@/lib/constants";
 
 type Option = { id: string; name: string };
 
@@ -43,7 +43,7 @@ export function TradesFilterBar({ setupTags }: { setupTags: Option[] }) {
 
   return (
     <div className="flex flex-col gap-4 rounded-md border p-4">
-      <div key={searchParams.toString()} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div key={searchParams.toString()} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
         <div>
           <Label htmlFor="filter-from" className="mb-1.5 block">
             From
@@ -118,6 +118,25 @@ export function TradesFilterBar({ setupTags }: { setupTags: Option[] }) {
           >
             <option value="">All</option>
             {SESSIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <Label htmlFor="filter-status" className="mb-1.5 block">
+            Status
+          </Label>
+          <select
+            id="filter-status"
+            className={selectClassName}
+            defaultValue={searchParams.get("status") ?? ""}
+            onChange={(e) => pushParams({ status: e.target.value })}
+          >
+            <option value="">All</option>
+            {TRADE_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>

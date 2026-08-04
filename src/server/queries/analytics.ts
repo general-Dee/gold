@@ -1,4 +1,4 @@
-import { and, asc, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, lt } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { tradeSetupTags, trades } from "@/server/db/schema";
 import { localDateKey } from "@/lib/dates";
@@ -8,7 +8,7 @@ import { getTradeAdherenceHistory } from "./gamification";
 type Trade = typeof trades.$inferSelect;
 
 async function closedTrades() {
-  return db.select().from(trades).orderBy(asc(trades.entryAt));
+  return db.select().from(trades).where(eq(trades.status, "closed")).orderBy(asc(trades.entryAt));
 }
 
 export type GroupStats = {
@@ -214,7 +214,13 @@ export async function getDailyPnlForMonth(year: number, month: number): Promise<
   const monthTrades = await db
     .select()
     .from(trades)
-    .where(and(gte(trades.entryAt, start.toISOString()), lt(trades.entryAt, end.toISOString())));
+    .where(
+      and(
+        gte(trades.entryAt, start.toISOString()),
+        lt(trades.entryAt, end.toISOString()),
+        eq(trades.status, "closed"),
+      ),
+    );
 
   const byDate = new Map<string, Trade[]>();
   for (const t of monthTrades) {

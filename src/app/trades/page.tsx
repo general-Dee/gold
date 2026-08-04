@@ -64,6 +64,7 @@ export default async function TradesPage({
               <TableHead>Entry</TableHead>
               <TableHead>Direction</TableHead>
               <TableHead>Session</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Outcome</TableHead>
               <TableHead>Planned R:R</TableHead>
               <TableHead>P&amp;L</TableHead>
@@ -79,6 +80,9 @@ export default async function TradesPage({
                 </TableCell>
                 <TableCell className="capitalize">{t.direction}</TableCell>
                 <TableCell className="capitalize">{t.session}</TableCell>
+                <TableCell>
+                  <Badge variant={t.status === "open" ? "default" : "outline"}>{t.status}</Badge>
+                </TableCell>
                 <TableCell>
                   {t.outcome ? (
                     <Badge variant={t.outcome === "win" ? "default" : "secondary"}>
@@ -96,7 +100,7 @@ export default async function TradesPage({
             ))}
             {trades.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   {hasFilters ? "No trades match these filters." : "No trades logged yet."}
                 </TableCell>
               </TableRow>

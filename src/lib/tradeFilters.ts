@@ -1,4 +1,4 @@
-import { DIRECTIONS, OUTCOMES, SESSIONS } from "@/lib/constants";
+import { DIRECTIONS, OUTCOMES, SESSIONS, TRADE_STATUSES } from "@/lib/constants";
 import type { TradeFilters } from "@/server/queries/trades";
 
 export function parseTradeFilters(params: Record<string, string | string[] | undefined>): TradeFilters {
@@ -10,6 +10,7 @@ export function parseTradeFilters(params: Record<string, string | string[] | und
   const direction = get("direction");
   const outcome = get("outcome");
   const session = get("session");
+  const status = get("status");
   const from = get("from");
   const to = get("to");
   const setupTagId = get("setupTagId");
@@ -26,6 +27,9 @@ export function parseTradeFilters(params: Record<string, string | string[] | und
       : undefined,
     session: SESSIONS.includes(session as (typeof SESSIONS)[number])
       ? (session as (typeof SESSIONS)[number])
+      : undefined,
+    status: TRADE_STATUSES.includes(status as (typeof TRADE_STATUSES)[number])
+      ? (status as (typeof TRADE_STATUSES)[number])
       : undefined,
     setupTagId: setupTagId || undefined,
     q: q || undefined,

@@ -16,6 +16,8 @@ export type TradeAdherence = {
   riskRewardRealized: number | null;
 };
 
+// Intentionally includes open trades — rule adherence is knowable at entry
+// time, independent of whether the trade has closed yet.
 export async function getTradeAdherenceHistory(): Promise<TradeAdherence[]> {
   const allTrades = await db.select().from(trades).orderBy(asc(trades.entryAt));
   const allChecks = await db.select().from(tradeRuleChecks);
@@ -86,7 +88,8 @@ export async function getBadgeUnlocks() {
 
 export type TradeViolation = { tradeId: string; entryAt: string; violatedRules: string[] };
 
-/** Rules broken on the most recently logged trade, or null if it's clean (or there are no trades). */
+/** Rules broken on the most recently logged trade, or null if it's clean (or there are no trades).
+ * Intentionally includes open trades — a violation should surface as soon as it's logged. */
 export async function getMostRecentTradeViolations(): Promise<TradeViolation | null> {
   const [mostRecent] = await db.select().from(trades).orderBy(desc(trades.entryAt)).limit(1);
   if (!mostRecent) return null;
