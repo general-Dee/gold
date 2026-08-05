@@ -78,24 +78,42 @@ export default async function TradesPage({
                     {new Date(t.entryAt).toLocaleString()}
                   </Link>
                 </TableCell>
-                <TableCell className="capitalize">{t.direction}</TableCell>
-                <TableCell className="capitalize">{t.session}</TableCell>
-                <TableCell>
-                  <Badge variant={t.status === "open" ? "default" : "outline"}>{t.status}</Badge>
+                <TableCell className="capitalize">
+                  <Link href={`/trades/${t.id}`} className="block">
+                    {t.direction}
+                  </Link>
+                </TableCell>
+                <TableCell className="capitalize">
+                  <Link href={`/trades/${t.id}`} className="block">
+                    {t.session}
+                  </Link>
                 </TableCell>
                 <TableCell>
-                  {t.outcome ? (
-                    <Badge variant={t.outcome === "win" ? "default" : "secondary"}>
-                      {t.outcome}
-                    </Badge>
-                  ) : (
-                    "—"
-                  )}
+                  <Link href={`/trades/${t.id}`} className="block">
+                    <Badge variant={t.status === "open" ? "default" : "outline"}>{t.status}</Badge>
+                  </Link>
                 </TableCell>
                 <TableCell>
-                  {t.riskRewardPlanned != null ? `${t.riskRewardPlanned.toFixed(2)}R` : "—"}
+                  <Link href={`/trades/${t.id}`} className="block">
+                    {t.outcome ? (
+                      <Badge variant={t.outcome === "win" ? "default" : "secondary"}>
+                        {t.outcome}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </Link>
                 </TableCell>
-                <TableCell>{t.pnl != null ? t.pnl.toFixed(2) : "—"}</TableCell>
+                <TableCell>
+                  <Link href={`/trades/${t.id}`} className="block">
+                    {t.riskRewardPlanned != null ? `${t.riskRewardPlanned.toFixed(2)}R` : "—"}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <Link href={`/trades/${t.id}`} className="block">
+                    {t.pnl != null ? t.pnl.toFixed(2) : "—"}
+                  </Link>
+                </TableCell>
               </TableRow>
             ))}
             {trades.length === 0 && (
