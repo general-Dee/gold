@@ -1,36 +1,48 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gold Journal
 
-## Getting Started
+A personal trading journal for XAUUSD (gold) discretionary trading. Log trades with entry/exit details, R:R, and P&L; track a pre-trade rule checklist with streaks; monitor account balance, drawdown, and monthly profit targets; and unlock gamification badges for discipline and performance.
 
-First, run the development server:
+## Stack
+
+- [Next.js 16](https://nextjs.org) (App Router) + React 19 + TypeScript
+- [Tailwind CSS v4](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com)
+- [Drizzle ORM](https://orm.drizzle.team) over SQLite (via `@libsql/client`)
+- [Vitest](https://vitest.dev) for tests
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). A SQLite database is created automatically on first run at `data/trading-journal.db` (override with the `DATABASE_URL` env var); uploaded trade chart images are stored under `data/uploads/`. Both are gitignored.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the dev server (Turbopack) |
+| `npm run build` | Production build |
+| `npm run start` | Run a production build |
+| `npm run lint` | Lint with ESLint |
+| `npm run test` | Run the test suite once |
+| `npm run test:watch` | Run tests in watch mode |
 
-## Learn More
+Schema changes go through Drizzle Kit:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx drizzle-kit generate   # generate a migration from src/server/db/schema.ts
+npx drizzle-kit push       # push schema changes to the local dev database
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project layout
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `src/app/` — routes (dashboard, trades, analytics, calendar, checklist, rules, account, achievements)
+- `src/components/` — UI components, grouped by feature area, plus shared `ui/` primitives (shadcn)
+- `src/server/queries/` — Drizzle read/write logic per domain
+- `src/server/actions/` — `"use server"` mutation entry points called directly from client forms
+- `src/lib/` — pure, framework-independent logic (R:R/position-size calculations, CSV import/export, zod validation schemas, date helpers)
+- `drizzle/` — SQL migrations generated from `src/server/db/schema.ts`
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `CLAUDE.md` for architecture notes and conventions relevant when making changes to this codebase.
