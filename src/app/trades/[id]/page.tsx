@@ -43,7 +43,10 @@ export default async function TradeDetailPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/trades/${trade.id}/edit`} className={buttonVariants({ variant: "outline" })}>
+          <Link
+            href={`/trades/${trade.id}/${trade.status === "open" ? "close" : "edit"}`}
+            className={buttonVariants({ variant: "outline" })}
+          >
             {trade.status === "open" ? "Close trade" : "Edit"}
           </Link>
           <DeleteTradeButton tradeId={trade.id} />

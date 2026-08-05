@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { TradeForm, toDatetimeLocal } from "@/components/trades/TradeForm";
+import { TradeForm } from "@/components/trades/TradeForm";
 import { updateTradeAction } from "@/server/actions/trades";
 import { getCurrentBalance } from "@/server/queries/account";
 import { listActiveMoodTags, listActiveRules, listActiveSetupTags } from "@/server/queries/rules";
@@ -51,15 +51,15 @@ export default async function EditTradePage({
           moodAfterId: trade.moodAfterId,
           reasoning: trade.reasoning,
           notesAfter: trade.notesAfter,
-          entryAt: toDatetimeLocal(trade.entryAt),
-          exitAt: toDatetimeLocal(trade.exitAt),
+          entryAt: trade.entryAt,
+          exitAt: trade.exitAt,
           ruleChecks: [],
         }}
         initialChecks={checks.map((c) => ({
           ruleId: c.ruleId,
           status: c.status as CheckStatus,
         }))}
-        onSubmitAction={(input) => updateTradeAction(trade.id, input)}
+        onSubmitAction={updateTradeAction.bind(null, trade.id)}
         accountBalance={accountBalance}
       />
     </div>

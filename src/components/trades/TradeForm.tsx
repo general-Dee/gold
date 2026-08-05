@@ -23,8 +23,15 @@ import {
 } from "@/lib/constants";
 import type { TradeInput } from "@/lib/validation";
 
-/** Empty string -> null, otherwise Number(v) — used for optional numeric fields. */
-const optionalNumber = (v: string) => (v === "" ? null : Number(v));
+/**
+ * Empty string -> null, otherwise Number(v) — used for optional numeric fields.
+ * Also treats null/undefined as null (not just ""): react-hook-form passes an
+ * untouched field's raw defaultValue through setValueAs, and defaultValues for
+ * these fields come straight from nullable DB columns — without this, Number(null)
+ * silently becomes 0 instead of staying null.
+ */
+const optionalNumber = (v: string | number | null | undefined) =>
+  v === "" || v == null ? null : Number(v);
 /** Empty option value ("—") -> null — used for optional select/enum fields. */
 const optionalSelect = (v: string) => (v === "" ? null : v);
 
@@ -74,15 +81,21 @@ export function TradeForm({
     setValue,
     formState: { errors },
   } = useForm<TradeInput>({
-    defaultValues: initialTrade ?? {
-      direction: "long",
-      instrument: "XAUUSD",
-      status: "closed",
-      session: sessionFromEntryTime(now),
-      entryAt: toDatetimeLocal(now.toISOString()),
-      newsNearby: false,
-      ruleChecks: [],
-    },
+    defaultValues: initialTrade
+      ? {
+          ...initialTrade,
+          entryAt: toDatetimeLocal(initialTrade.entryAt),
+          exitAt: toDatetimeLocal(initialTrade.exitAt),
+        }
+      : {
+          direction: "long",
+          instrument: "XAUUSD",
+          status: "closed",
+          session: sessionFromEntryTime(now),
+          entryAt: toDatetimeLocal(now.toISOString()),
+          newsNearby: false,
+          ruleChecks: [],
+        },
   });
 
   const direction = watch("direction");
