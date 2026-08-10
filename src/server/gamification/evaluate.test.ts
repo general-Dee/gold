@@ -209,6 +209,24 @@ describe("evaluateBadgesForTrade", () => {
     expect(await evaluateBadgesForTrade(t6.id)).toEqual([]);
   });
 
+  it("unlocks a loss-streak milestone and resets it after a win", async () => {
+    const t1 = await addTrade({ entryAt: "2026-08-01T10:00:00.000Z", outcome: "loss" });
+    await evaluateBadgesForTrade(t1.id);
+    const t2 = await addTrade({ entryAt: "2026-08-02T10:00:00.000Z", outcome: "loss" });
+    expect(await evaluateBadgesForTrade(t2.id)).toEqual([]);
+    const t3 = await addTrade({ entryAt: "2026-08-03T10:00:00.000Z", outcome: "loss" });
+    expect(await evaluateBadgesForTrade(t3.id)).toContainEqual({
+      badgeKey: "loss_streak_3",
+      tradeId: t3.id,
+    });
+
+    const broken = await addTrade({ entryAt: "2026-08-04T10:00:00.000Z", outcome: "win" });
+    await evaluateBadgesForTrade(broken.id);
+    await addTrade({ entryAt: "2026-08-05T10:00:00.000Z", outcome: "loss" });
+    const t6 = await addTrade({ entryAt: "2026-08-06T10:00:00.000Z", outcome: "loss" });
+    expect(await evaluateBadgesForTrade(t6.id)).toEqual([]);
+  });
+
   it("unlocks a big-win badge independently for two different qualifying trades", async () => {
     const t1 = await addTrade({ entryAt: "2026-07-01T10:00:00.000Z", riskRewardRealized: 3 });
     expect(await evaluateBadgesForTrade(t1.id)).toContainEqual({

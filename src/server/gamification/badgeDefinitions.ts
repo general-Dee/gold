@@ -59,6 +59,7 @@ export const STATIC_BADGE_CATALOG: BadgeCatalogEntry[] = [
 // with the adherence badges' "never by profit" framing.
 export const PROFIT_R_MILESTONES = [10, 25, 50, 100] as const;
 export const WIN_STREAK_MILESTONES = [3, 5, 10] as const;
+export const LOSS_STREAK_MILESTONES = [3, 5, 10] as const;
 export const BIG_WIN_R_MILESTONES = [3, 5, 10] as const;
 
 export function profitMilestoneBadge(n: number): BadgeCatalogEntry {
@@ -77,6 +78,14 @@ export function winStreakBadge(n: number): BadgeCatalogEntry {
   };
 }
 
+export function lossStreakBadge(n: number): BadgeCatalogEntry {
+  return {
+    key: `loss_streak_${n}`,
+    label: `${n}-Loss Streak Survived`,
+    description: `Took ${n} losses in a row and kept following the process.`,
+  };
+}
+
 export function bigWinBadge(n: number): BadgeCatalogEntry {
   return {
     key: `big_win_${n}r`,
@@ -88,9 +97,15 @@ export function bigWinBadge(n: number): BadgeCatalogEntry {
 export const PERFORMANCE_BADGE_CATALOG: BadgeCatalogEntry[] = [
   ...PROFIT_R_MILESTONES.map(profitMilestoneBadge),
   ...WIN_STREAK_MILESTONES.map(winStreakBadge),
+  ...LOSS_STREAK_MILESTONES.map(lossStreakBadge),
   ...BIG_WIN_R_MILESTONES.map(bigWinBadge),
 ];
 
 export function isPerformanceBadgeKey(key: string): boolean {
-  return key.startsWith("profit_") || key.startsWith("win_streak_") || key.startsWith("big_win_");
+  return (
+    key.startsWith("profit_") ||
+    key.startsWith("win_streak_") ||
+    key.startsWith("loss_streak_") ||
+    key.startsWith("big_win_")
+  );
 }

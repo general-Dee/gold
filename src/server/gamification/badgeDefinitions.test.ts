@@ -5,11 +5,13 @@ import {
   MONTHLY_ADHERENCE_THRESHOLD,
   PROFIT_R_MILESTONES,
   WIN_STREAK_MILESTONES,
+  LOSS_STREAK_MILESTONES,
   BIG_WIN_R_MILESTONES,
   streakMilestoneBadge,
   monthlyAdherenceBadge,
   profitMilestoneBadge,
   winStreakBadge,
+  lossStreakBadge,
   bigWinBadge,
   resolveBadge,
   isPerformanceBadgeKey,
@@ -94,6 +96,16 @@ describe("winStreakBadge", () => {
   });
 });
 
+describe("lossStreakBadge", () => {
+  it("builds a badge keyed and worded for the given loss-streak length", () => {
+    expect(lossStreakBadge(5)).toEqual({
+      key: "loss_streak_5",
+      label: "5-Loss Streak Survived",
+      description: "Took 5 losses in a row and kept following the process.",
+    });
+  });
+});
+
 describe("bigWinBadge", () => {
   it("builds a badge keyed and worded for the given single-trade R threshold", () => {
     expect(bigWinBadge(3)).toEqual({
@@ -105,17 +117,21 @@ describe("bigWinBadge", () => {
 });
 
 describe("PERFORMANCE_BADGE_CATALOG", () => {
-  it("contains one entry per profit, win-streak, and big-win milestone", () => {
+  it("contains one entry per profit, win-streak, loss-streak, and big-win milestone", () => {
     expect(PERFORMANCE_BADGE_CATALOG).toHaveLength(
-      PROFIT_R_MILESTONES.length + WIN_STREAK_MILESTONES.length + BIG_WIN_R_MILESTONES.length,
+      PROFIT_R_MILESTONES.length +
+        WIN_STREAK_MILESTONES.length +
+        LOSS_STREAK_MILESTONES.length +
+        BIG_WIN_R_MILESTONES.length,
     );
   });
 });
 
 describe("isPerformanceBadgeKey", () => {
-  it("returns true for profit, win-streak, and big-win keys", () => {
+  it("returns true for profit, win-streak, loss-streak, and big-win keys", () => {
     expect(isPerformanceBadgeKey("profit_25r")).toBe(true);
     expect(isPerformanceBadgeKey("win_streak_5")).toBe(true);
+    expect(isPerformanceBadgeKey("loss_streak_5")).toBe(true);
     expect(isPerformanceBadgeKey("big_win_3r")).toBe(true);
   });
 

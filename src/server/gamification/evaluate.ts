@@ -8,11 +8,13 @@ import {
 import {
   BIG_WIN_R_MILESTONES,
   COMEBACK_LENGTH,
+  LOSS_STREAK_MILESTONES,
   MONTHLY_ADHERENCE_THRESHOLD,
   PROFIT_R_MILESTONES,
   STREAK_MILESTONES,
   WIN_STREAK_MILESTONES,
   bigWinBadge,
+  lossStreakBadge,
   monthlyAdherenceBadge,
   profitMilestoneBadge,
   streakMilestoneBadge,
@@ -113,6 +115,14 @@ export async function evaluateBadgesForTrade(tradeId: string) {
     const badge = winStreakBadge(n);
     if (hasKey(badge.key)) continue;
     const idx = winStreakAtTrade.findIndex((s) => s >= n);
+    if (idx !== -1) toInsert.push({ badgeKey: badge.key, tradeId: history[idx].tradeId });
+  }
+
+  const lossStreakAtTrade = streakArray((t) => t.outcome === "loss");
+  for (const n of LOSS_STREAK_MILESTONES) {
+    const badge = lossStreakBadge(n);
+    if (hasKey(badge.key)) continue;
+    const idx = lossStreakAtTrade.findIndex((s) => s >= n);
     if (idx !== -1) toInsert.push({ badgeKey: badge.key, tradeId: history[idx].tradeId });
   }
 
