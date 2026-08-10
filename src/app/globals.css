@@ -7,9 +7,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-source-serif);
+  --font-mono: var(--font-source-serif);
+  --font-heading: var(--font-source-serif);
+  --spacing: 0.3125rem;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +40,35 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Broadsheet ramps — theme-invariant swatches (100 lightest .. 900 darkest),
+     exposed as real Tailwind utilities: text-accent-700, bg-accent2-100, etc. */
+  --color-accent-100: var(--accent-100);
+  --color-accent-200: var(--accent-200);
+  --color-accent-300: var(--accent-300);
+  --color-accent-400: var(--accent-400);
+  --color-accent-500: var(--accent-500);
+  --color-accent-600: var(--accent-600);
+  --color-accent-700: var(--accent-700);
+  --color-accent-800: var(--accent-800);
+  --color-accent-900: var(--accent-900);
+  --color-accent2-100: var(--accent2-100);
+  --color-accent2-200: var(--accent2-200);
+  --color-accent2-300: var(--accent2-300);
+  --color-accent2-400: var(--accent2-400);
+  --color-accent2-500: var(--accent2-500);
+  --color-accent2-600: var(--accent2-600);
+  --color-accent2-700: var(--accent2-700);
+  --color-accent2-800: var(--accent2-800);
+  --color-accent2-900: var(--accent2-900);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-200: var(--neutral-200);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-400: var(--neutral-400);
+  --color-neutral-500: var(--neutral-500);
+  --color-neutral-600: var(--neutral-600);
+  --color-neutral-700: var(--neutral-700);
+  --color-neutral-800: var(--neutral-800);
+  --color-neutral-900: var(--neutral-900);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,78 +79,114 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  /* Validated diverging pair for the P&L calendar (dataviz skill: blue/red,
-     passes CVD + contrast checks — plain green/red fails CVD separation). */
-  --pnl-profit: #2a78d6;
-  --pnl-loss: #e34948;
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Broadsheet accent ramp (cyan, base #0088b0 anchored at step 700) — held
+     hue/chroma constant, stepped lightness. Generated in OKLCH, not hand-picked. */
+  --accent-100: oklch(0.965 0.0568 227.53);
+  --accent-200: oklch(0.92 0.0568 227.53);
+  --accent-300: oklch(0.85 0.1135 227.53);
+  --accent-400: oklch(0.75 0.1135 227.53);
+  --accent-500: oklch(0.65 0.1135 227.53);
+  --accent-600: oklch(0.58 0.1135 227.53);
+  --accent-700: oklch(0.5849 0.1135 227.53); /* #0088b0 literal */
+  --accent-800: oklch(0.4316 0.1135 227.53);
+  --accent-900: oklch(0.3222 0.1135 227.53);
+
+  /* Broadsheet accent-2 ramp (magenta, base #d6006c anchored at step 700). */
+  --accent2-100: oklch(0.965 0.1143 1.86);
+  --accent2-200: oklch(0.92 0.1143 1.86);
+  --accent2-300: oklch(0.85 0.2285 1.86);
+  --accent2-400: oklch(0.75 0.2285 1.86);
+  --accent2-500: oklch(0.65 0.2285 1.86);
+  --accent2-600: oklch(0.58 0.2285 1.86);
+  --accent2-700: oklch(0.5659 0.2285 1.86); /* #d6006c literal */
+  --accent2-800: oklch(0.4206 0.2285 1.86);
+  --accent2-900: oklch(0.3168 0.2285 1.86);
+
+  /* Warm neutral ramp, hue matched to the Broadsheet text color (#201e1d). */
+  --neutral-100: oklch(0.97 0.0011 48.57);
+  --neutral-200: oklch(0.93 0.0015 48.57);
+  --neutral-300: oklch(0.85 0.002 48.57);
+  --neutral-400: oklch(0.74 0.0025 48.57);
+  --neutral-500: oklch(0.63 0.003 48.57);
+  --neutral-600: oklch(0.52 0.0032 48.57);
+  --neutral-700: oklch(0.45 0.0034 48.57);
+  --neutral-800: oklch(0.34 0.0035 48.57);
+  --neutral-900: oklch(0.2369 0.0036 48.57); /* #201e1d literal */
+
+  --background: oklch(0.9619 0.0011 17.18); /* #f3f2f2 */
+  --foreground: var(--neutral-900); /* #201e1d */
+  --card: oklch(0.9348 0.0011 17.18); /* #eae9e9 surface */
+  --card-foreground: var(--neutral-900);
+  --popover: oklch(0.9348 0.0011 17.18);
+  --popover-foreground: var(--neutral-900);
+  /* Solid-fill buttons use accent-800 rather than the literal accent-700 hex:
+     white text on accent-700 only hits ~4.1:1 contrast (fails WCAG AA body
+     text); accent-800 clears 7.5:1. accent-700 itself stays available as the
+     literal brand hex for text/tag/data-viz roles, where it does pass AA. */
+  --primary: var(--accent-800);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: var(--neutral-200);
+  --secondary-foreground: var(--neutral-900);
+  --muted: var(--neutral-200);
+  --muted-foreground: var(--neutral-600);
+  --accent: var(--neutral-200); /* shadcn's generic hover-surface token — distinct from the brand "accent" color above */
+  --accent-foreground: var(--neutral-900);
+  --destructive: var(--accent2-700); /* accent-2 magenta — loss / broke-rule / over-limit semantic */
+  --border: var(--neutral-300);
+  --input: var(--neutral-300);
+  --ring: var(--accent-600);
+  --chart-1: var(--accent-300);
+  --chart-2: var(--accent-500);
+  --chart-3: var(--accent-700);
+  --chart-4: var(--accent2-500);
+  --chart-5: var(--accent2-700);
+  --pnl-profit: var(--accent-700);
+  --pnl-loss: var(--accent2-700);
+  --radius: 0.125rem;
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--neutral-900);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--neutral-200);
+  --sidebar-accent-foreground: var(--neutral-900);
+  --sidebar-border: var(--neutral-300);
+  --sidebar-ring: var(--accent-600);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --pnl-profit: #3987e5;
-  --pnl-loss: #e66767;
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0.19 0.004 48.57);
+  --foreground: oklch(0.94 0.0015 48.57);
+  --card: oklch(0.24 0.004 48.57);
+  --card-foreground: oklch(0.94 0.0015 48.57);
+  --popover: oklch(0.24 0.004 48.57);
+  --popover-foreground: oklch(0.94 0.0015 48.57);
+  --primary: var(--accent-600);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.28 0.004 48.57);
+  --secondary-foreground: oklch(0.94 0.0015 48.57);
+  --muted: oklch(0.28 0.004 48.57);
+  --muted-foreground: oklch(0.65 0.003 48.57);
+  --accent: oklch(0.28 0.004 48.57);
+  --accent-foreground: oklch(0.94 0.0015 48.57);
+  --destructive: var(--accent2-500);
+  --border: oklch(0.32 0.004 48.57);
+  --input: oklch(0.32 0.004 48.57);
+  --ring: var(--accent-500);
+  --chart-1: var(--accent-400);
+  --chart-2: var(--accent-600);
+  --chart-3: var(--accent-700);
+  --chart-4: var(--accent2-400);
+  --chart-5: var(--accent2-600);
+  --pnl-profit: var(--accent-500);
+  --pnl-loss: var(--accent2-500);
+  --sidebar: oklch(0.24 0.004 48.57);
+  --sidebar-foreground: oklch(0.94 0.0015 48.57);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: oklch(0.28 0.004 48.57);
+  --sidebar-accent-foreground: oklch(0.94 0.0015 48.57);
+  --sidebar-border: oklch(0.32 0.004 48.57);
+  --sidebar-ring: var(--accent-500);
 }
 
 @layer base {
