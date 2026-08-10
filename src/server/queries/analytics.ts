@@ -20,7 +20,7 @@ export type GroupStats = {
   expectancy: number | null;
 };
 
-function summarizeTrades(group: Trade[]): GroupStats {
+export function summarizeTrades(group: Trade[]): GroupStats {
   const decided = group.filter((t) => t.outcome === "win" || t.outcome === "loss");
   const winRate =
     decided.length > 0 ? decided.filter((t) => t.outcome === "win").length / decided.length : null;
@@ -104,6 +104,35 @@ export async function getBreakdownByDayOfWeek(): Promise<BreakdownGroup[]> {
     (key) => DAY_LABELS[Number(key)],
   );
   return result.sort((a, b) => Number(a.key) - Number(b.key));
+}
+
+export type RMultipleBucket = { bucket: string; count: number; totalR: number };
+
+const R_BUCKET_RANGES: { bucket: string; min: number; max: number }[] = [
+  { bucket: "< -2R", min: -Infinity, max: -2 },
+  { bucket: "-2R to -1R", min: -2, max: -1 },
+  { bucket: "-1R to 0R", min: -1, max: 0 },
+  { bucket: "0R to 1R", min: 0, max: 1 },
+  { bucket: "1R to 2R", min: 1, max: 2 },
+  { bucket: "2R to 3R", min: 2, max: 3 },
+  { bucket: "3R+", min: 3, max: Infinity },
+];
+
+// Fixed half-open numeric buckets — can't reuse the generic breakdownBy
+// helper (string-equality buckets). Always returns all buckets, zero-filled,
+// so the chart's x-axis is stable. Sorted by bucket order, not count.
+export async function getRMultipleDistribution(): Promise<RMultipleBucket[]> {
+  const all = await closedTrades();
+  const rValues = all.map((t) => t.riskRewardRealized).filter((v): v is number => v != null);
+
+  return R_BUCKET_RANGES.map(({ bucket, min, max }) => {
+    const inBucket = rValues.filter((v) => v >= min && v < max);
+    return {
+      bucket,
+      count: inBucket.length,
+      totalR: inBucket.reduce((s, v) => s + v, 0),
+    };
+  });
 }
 
 export async function getMaxDrawdown(): Promise<{ maxDrawdownPnl: number; maxDrawdownR: number } | null> {

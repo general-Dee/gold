@@ -367,3 +367,61 @@ describe("getMaxDrawdown", () => {
     expect(result).toEqual({ maxDrawdownPnl: 170, maxDrawdownR: 2 });
   });
 });
+
+describe("getRMultipleDistribution", () => {
+  const bucketOf = (result: Awaited<ReturnType<typeof analytics.getRMultipleDistribution>>, bucket: string) =>
+    result.find((b) => b.bucket === bucket);
+
+  it("returns all buckets, zero-filled, when there are no closed trades", async () => {
+    const result = await analytics.getRMultipleDistribution();
+    expect(result).toEqual([
+      { bucket: "< -2R", count: 0, totalR: 0 },
+      { bucket: "-2R to -1R", count: 0, totalR: 0 },
+      { bucket: "-1R to 0R", count: 0, totalR: 0 },
+      { bucket: "0R to 1R", count: 0, totalR: 0 },
+      { bucket: "1R to 2R", count: 0, totalR: 0 },
+      { bucket: "2R to 3R", count: 0, totalR: 0 },
+      { bucket: "3R+", count: 0, totalR: 0 },
+    ]);
+  });
+
+  it("sorts trades into the correct bucket by riskRewardRealized", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", riskRewardRealized: -3 });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", riskRewardRealized: -1.5 });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", riskRewardRealized: 0.5 });
+    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", riskRewardRealized: 4 });
+
+    const result = await analytics.getRMultipleDistribution();
+    expect(bucketOf(result, "< -2R")?.count).toBe(1);
+    expect(bucketOf(result, "-2R to -1R")?.count).toBe(1);
+    expect(bucketOf(result, "0R to 1R")?.count).toBe(1);
+    expect(bucketOf(result, "3R+")?.count).toBe(1);
+  });
+
+  it("places boundary values in the greater-or-equal bucket (half-open ranges)", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", riskRewardRealized: -1 });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", riskRewardRealized: 0 });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", riskRewardRealized: 3 });
+
+    const result = await analytics.getRMultipleDistribution();
+    expect(bucketOf(result, "-1R to 0R")?.count).toBe(1);
+    expect(bucketOf(result, "0R to 1R")?.count).toBe(1);
+    expect(bucketOf(result, "3R+")?.count).toBe(1);
+  });
+
+  it("excludes open trades and trades with a null riskRewardRealized", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", riskRewardRealized: 1, status: "open" });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", riskRewardRealized: null });
+
+    const result = await analytics.getRMultipleDistribution();
+    expect(result.every((b) => b.count === 0)).toBe(true);
+  });
+
+  it("sums totalR within each bucket", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", riskRewardRealized: 1.5 });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", riskRewardRealized: 1.2 });
+
+    const result = await analytics.getRMultipleDistribution();
+    expect(bucketOf(result, "1R to 2R")).toEqual({ bucket: "1R to 2R", count: 2, totalR: 2.7 });
+  });
+});

@@ -1,11 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BreakdownGroup } from "@/server/queries/analytics";
 
 const money = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
 
-export function BreakdownBarChart({ groups }: { groups: BreakdownGroup[] }) {
+export function BreakdownBarChart({
+  groups,
+  linkBase,
+}: {
+  groups: BreakdownGroup[];
+  /** When set, each label links to `${linkBase}/${key}` (e.g. "/setups"). A
+   * plain string, not a function — Server Component props passed to this
+   * "use client" component must be serializable across the RSC boundary. */
+  linkBase?: string;
+}) {
   if (groups.length === 0) {
     return <p className="text-sm text-muted-foreground">Not enough trades yet.</p>;
   }
@@ -51,7 +61,14 @@ export function BreakdownBarChart({ groups }: { groups: BreakdownGroup[] }) {
         {groups.map((g) => (
           <div key={g.key}>
             <div className="text-muted-foreground">
-              {g.label} ({g.count})
+              {linkBase ? (
+                <Link href={`${linkBase}/${g.key}`} className="hover:text-foreground hover:underline">
+                  {g.label}
+                </Link>
+              ) : (
+                g.label
+              )}{" "}
+              ({g.count})
             </div>
             <div>Avg R: {g.avgR != null ? `${g.avgR.toFixed(2)}R` : "—"}</div>
             <div>Expectancy: {g.expectancy != null ? money(g.expectancy) : "—"}</div>

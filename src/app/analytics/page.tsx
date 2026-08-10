@@ -2,6 +2,7 @@ import { AdherenceTrendChart } from "@/components/analytics/AdherenceTrendChart"
 import { BreakdownBarChart } from "@/components/analytics/BreakdownBarChart";
 import { CorrelationChart } from "@/components/analytics/CorrelationChart";
 import { EquityCurveChart } from "@/components/analytics/EquityCurveChart";
+import { RMultipleHistogram } from "@/components/analytics/RMultipleHistogram";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getAdherenceCorrelation,
@@ -13,6 +14,7 @@ import {
   getBreakdownBySetupTag,
   getEquityCurve,
   getMaxDrawdown,
+  getRMultipleDistribution,
   getWinRate,
 } from "@/server/queries/analytics";
 
@@ -32,6 +34,7 @@ export default async function AnalyticsPage() {
     bySession,
     byMoodBefore,
     byDayOfWeek,
+    rDistribution,
   ] = await Promise.all([
     getWinRate(),
     getAverageRiskReward("planned"),
@@ -44,6 +47,7 @@ export default async function AnalyticsPage() {
     getBreakdownBySession(),
     getBreakdownByMoodBefore(),
     getBreakdownByDayOfWeek(),
+    getRMultipleDistribution(),
   ]);
 
   return (
@@ -94,6 +98,15 @@ export default async function AnalyticsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>R-multiple distribution</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RMultipleHistogram data={rDistribution} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Rule adherence over time</CardTitle>
         </CardHeader>
         <CardContent>
@@ -115,7 +128,7 @@ export default async function AnalyticsPage() {
           <CardTitle>Performance by setup</CardTitle>
         </CardHeader>
         <CardContent>
-          <BreakdownBarChart groups={bySetupTag} />
+          <BreakdownBarChart groups={bySetupTag} linkBase="/setups" />
         </CardContent>
       </Card>
 

@@ -19,6 +19,7 @@ let updateRuleTextAction: typeof import("@/server/actions/rules").updateRuleText
 let reorderRulesAction: typeof import("@/server/actions/rules").reorderRulesAction;
 let createSetupTagAction: typeof import("@/server/actions/rules").createSetupTagAction;
 let archiveSetupTagAction: typeof import("@/server/actions/rules").archiveSetupTagAction;
+let updateSetupTagDetailsAction: typeof import("@/server/actions/rules").updateSetupTagDetailsAction;
 let createMoodTagAction: typeof import("@/server/actions/rules").createMoodTagAction;
 let archiveMoodTagAction: typeof import("@/server/actions/rules").archiveMoodTagAction;
 let createRule: typeof import("@/server/queries/rules").createRule;
@@ -34,6 +35,7 @@ beforeAll(async () => {
     reorderRulesAction,
     createSetupTagAction,
     archiveSetupTagAction,
+    updateSetupTagDetailsAction,
     createMoodTagAction,
     archiveMoodTagAction,
   } = await import("@/server/actions/rules"));
@@ -149,6 +151,35 @@ describe("archiveSetupTagAction", () => {
     const [row] = await db.select().from(schema.setupTags);
     expect(row.isActive).toBe(false);
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
+  });
+});
+
+describe("updateSetupTagDetailsAction", () => {
+  it("updates notes and expectedR, revalidating /rules and /setups/[id]", async () => {
+    const tag = await createSetupTag("NY reversal");
+
+    await updateSetupTagDetailsAction(
+      tag.id,
+      buildFormData({ notes: "Wait for sweep", expectedR: "2.5" }),
+    );
+
+    const [row] = await db.select().from(schema.setupTags);
+    expect(row).toMatchObject({ notes: "Wait for sweep", expectedR: 2.5 });
+    expect(revalidatePath).toHaveBeenCalledWith("/rules");
+    expect(revalidatePath).toHaveBeenCalledWith(`/setups/${tag.id}`);
+  });
+
+  it("treats empty-string fields as null", async () => {
+    const tag = await createSetupTag("NY reversal");
+    await updateSetupTagDetailsAction(
+      tag.id,
+      buildFormData({ notes: "Some notes", expectedR: "2" }),
+    );
+
+    await updateSetupTagDetailsAction(tag.id, buildFormData({ notes: "", expectedR: "" }));
+
+    const [row] = await db.select().from(schema.setupTags);
+    expect(row).toMatchObject({ notes: null, expectedR: null });
   });
 });
 

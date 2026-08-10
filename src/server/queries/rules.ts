@@ -57,6 +57,20 @@ export async function archiveSetupTag(id: string) {
   await db.update(setupTags).set({ isActive: false }).where(eq(setupTags.id, id));
 }
 
+export async function getSetupTagById(id: string) {
+  const [row] = await db.select().from(setupTags).where(eq(setupTags.id, id));
+  return row ?? null;
+}
+
+// notes/expectedR only — name/isActive untouched, matching updateRuleText's
+// scoped-field-update precedent.
+export async function updateSetupTagDetails(
+  id: string,
+  details: { notes: string | null; expectedR: number | null },
+) {
+  await db.update(setupTags).set(details).where(eq(setupTags.id, id));
+}
+
 export async function listActiveMoodTags() {
   return db.select().from(moodTags).where(eq(moodTags.isActive, true));
 }

@@ -10,8 +10,11 @@ import {
   createSetupTag,
   reorderRules,
   updateRuleText,
+  updateSetupTagDetails,
 } from "@/server/queries/rules";
-import { moodTagSchema, ruleSchema, setupTagSchema } from "@/lib/validation";
+import { moodTagSchema, ruleSchema, setupTagDetailsSchema, setupTagSchema } from "@/lib/validation";
+
+const emptyToNull = (v: FormDataEntryValue | null) => (v === "" || v == null ? null : v);
 
 export async function createRuleAction(formData: FormData) {
   const { text } = ruleSchema.parse({ text: formData.get("text") });
@@ -44,6 +47,16 @@ export async function createSetupTagAction(formData: FormData) {
 export async function archiveSetupTagAction(id: string) {
   await archiveSetupTag(id);
   revalidatePath("/rules");
+}
+
+export async function updateSetupTagDetailsAction(id: string, formData: FormData) {
+  const { notes, expectedR } = setupTagDetailsSchema.parse({
+    notes: emptyToNull(formData.get("notes")),
+    expectedR: emptyToNull(formData.get("expectedR")),
+  });
+  await updateSetupTagDetails(id, { notes: notes ?? null, expectedR: expectedR ?? null });
+  revalidatePath("/rules");
+  revalidatePath(`/setups/${id}`);
 }
 
 export async function createMoodTagAction(formData: FormData) {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,7 +71,9 @@ export default async function RulesPage() {
                 key={tag.id}
                 className="flex items-center gap-2 rounded-full border px-3 py-1 text-sm"
               >
-                {tag.name}
+                <Link href={`/setups/${tag.id}`} className="hover:underline">
+                  {tag.name}
+                </Link>
                 <form action={archiveSetupTagAction.bind(null, tag.id)}>
                   <button type="submit" className="text-muted-foreground hover:text-foreground">
                     ×
