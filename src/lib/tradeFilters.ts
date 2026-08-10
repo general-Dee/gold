@@ -1,5 +1,5 @@
-import { DIRECTIONS, OUTCOMES, SESSIONS, TRADE_STATUSES } from "@/lib/constants";
-import type { TradeFilters } from "@/server/queries/trades";
+import { DIRECTIONS, OUTCOMES, SESSIONS, SORT_DIRECTIONS, TRADE_SORT_FIELDS, TRADE_STATUSES } from "@/lib/constants";
+import type { TradeFilters, TradeSort } from "@/server/queries/trades";
 
 export function parseTradeFilters(params: Record<string, string | string[] | undefined>): TradeFilters {
   const get = (key: string) => {
@@ -14,6 +14,7 @@ export function parseTradeFilters(params: Record<string, string | string[] | und
   const from = get("from");
   const to = get("to");
   const setupTagId = get("setupTagId");
+  const moodTagId = get("moodTagId");
   const q = get("q");
 
   return {
@@ -32,6 +33,27 @@ export function parseTradeFilters(params: Record<string, string | string[] | und
       ? (status as (typeof TRADE_STATUSES)[number])
       : undefined,
     setupTagId: setupTagId || undefined,
+    moodTagId: moodTagId || undefined,
     q: q || undefined,
+  };
+}
+
+/** Sort is parsed separately from filters — it doesn't affect which trades
+ * match, so pages can tell "no filters applied" apart from "just sorted". */
+export function parseTradeSort(params: Record<string, string | string[] | undefined>): TradeSort | undefined {
+  const get = (key: string) => {
+    const value = params[key];
+    return Array.isArray(value) ? value[0] : value;
+  };
+
+  const sortBy = get("sort");
+  const sortDir = get("dir");
+  if (!TRADE_SORT_FIELDS.includes(sortBy as (typeof TRADE_SORT_FIELDS)[number])) return undefined;
+
+  return {
+    sortBy: sortBy as (typeof TRADE_SORT_FIELDS)[number],
+    sortDir: SORT_DIRECTIONS.includes(sortDir as (typeof SORT_DIRECTIONS)[number])
+      ? (sortDir as (typeof SORT_DIRECTIONS)[number])
+      : "desc",
   };
 }

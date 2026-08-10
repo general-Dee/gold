@@ -11,7 +11,13 @@ type Option = { id: string; name: string };
 
 const selectClassName = "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm";
 
-export function TradesFilterBar({ setupTags }: { setupTags: Option[] }) {
+export function TradesFilterBar({
+  setupTags,
+  moodTags,
+}: {
+  setupTags: Option[];
+  moodTags: Option[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -43,7 +49,7 @@ export function TradesFilterBar({ setupTags }: { setupTags: Option[] }) {
 
   return (
     <div className="flex flex-col gap-4 rounded-md border p-4">
-      <div key={searchParams.toString()} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div key={searchParams.toString()} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
         <div>
           <Label htmlFor="filter-from" className="mb-1.5 block">
             From
@@ -156,6 +162,25 @@ export function TradesFilterBar({ setupTags }: { setupTags: Option[] }) {
           >
             <option value="">All</option>
             {setupTags.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <Label htmlFor="filter-mood" className="mb-1.5 block">
+            Mood
+          </Label>
+          <select
+            id="filter-mood"
+            className={selectClassName}
+            defaultValue={searchParams.get("moodTagId") ?? ""}
+            onChange={(e) => pushParams({ moodTagId: e.target.value })}
+          >
+            <option value="">All</option>
+            {moodTags.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>

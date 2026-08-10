@@ -22,6 +22,12 @@ export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 export const PERIODS = ["weekly", "monthly"] as const;
 export type Period = (typeof PERIODS)[number];
 
+export const TRADE_SORT_FIELDS = ["entryAt", "riskRewardPlanned", "pnl"] as const;
+export type TradeSortField = (typeof TRADE_SORT_FIELDS)[number];
+
+export const SORT_DIRECTIONS = ["asc", "desc"] as const;
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
+
 export const DEFAULT_RULES = [
   "Waited for session open (no pre-market impulse entries)",
   "Risk sized at or below 1% of account",

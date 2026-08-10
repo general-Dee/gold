@@ -212,6 +212,30 @@ describe("listTrades", () => {
     expect(await listTrades({ setupTagId: tag.id })).toEqual([]);
   });
 
+  it("filters by mood before entering the trade", async () => {
+    const [calm] = await db.insert(schema.moodTags).values({ name: "Calm" }).returning();
+    const [anxious] = await db.insert(schema.moodTags).values({ name: "Anxious" }).returning();
+    const calmTrade = await createTrade(buildInput({ moodBeforeId: calm.id }));
+    await createTrade(buildInput({ moodBeforeId: anxious.id }));
+
+    const found = await listTrades({ moodTagId: calm.id });
+    expect(found.map((t) => t.id)).toEqual([calmTrade.id]);
+  });
+
+  it("sorts by the given field and direction", async () => {
+    const big = await createTrade(buildInput({ entryAt: "2026-01-01T10:00:00.000Z", pnl: 200 }));
+    const small = await createTrade(buildInput({ entryAt: "2026-01-02T10:00:00.000Z", pnl: 50 }));
+
+    const byPnlAsc = await listTrades({}, { sortBy: "pnl", sortDir: "asc" });
+    expect(byPnlAsc.map((t) => t.id)).toEqual([small.id, big.id]);
+
+    const byPnlDesc = await listTrades({}, { sortBy: "pnl", sortDir: "desc" });
+    expect(byPnlDesc.map((t) => t.id)).toEqual([big.id, small.id]);
+
+    const byEntryAsc = await listTrades({}, { sortBy: "entryAt", sortDir: "asc" });
+    expect(byEntryAsc.map((t) => t.id)).toEqual([big.id, small.id]);
+  });
+
   it("searches across reasoning, notesAfter, and newsNote", async () => {
     const match = await createTrade(buildInput({ reasoning: "Waited for London breakout confirmation" }));
     await createTrade(buildInput({ reasoning: "Unrelated setup" }));

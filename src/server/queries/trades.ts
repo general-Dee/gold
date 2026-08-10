@@ -1,6 +1,6 @@
 import { unlink } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   badgeUnlocks,
@@ -12,7 +12,7 @@ import {
 } from "@/server/db/schema";
 import { plannedRiskReward, realizedRiskReward } from "@/lib/calculations";
 import { rowsFromCsv } from "@/lib/csv";
-import type { Direction, Outcome, Session, TradeStatus } from "@/lib/constants";
+import type { Direction, Outcome, Session, SortDirection, TradeSortField, TradeStatus } from "@/lib/constants";
 import { tradeImportRowSchema, type TradeInput } from "@/lib/validation";
 import {
   createMoodTag,
@@ -31,10 +31,19 @@ export type TradeFilters = {
   session?: Session;
   status?: TradeStatus;
   setupTagId?: string;
+  moodTagId?: string;
   q?: string;
 };
 
-export async function listTrades(filters: TradeFilters = {}) {
+export type TradeSort = { sortBy: TradeSortField; sortDir: SortDirection };
+
+const SORT_COLUMNS = {
+  entryAt: trades.entryAt,
+  riskRewardPlanned: trades.riskRewardPlanned,
+  pnl: trades.pnl,
+} as const;
+
+export async function listTrades(filters: TradeFilters = {}, sort?: TradeSort) {
   const conditions = [];
   if (filters.from) conditions.push(gte(trades.entryAt, filters.from));
   if (filters.to) conditions.push(lte(trades.entryAt, filters.to));
@@ -55,6 +64,7 @@ export async function listTrades(filters: TradeFilters = {}) {
       ),
     );
   }
+  if (filters.moodTagId) conditions.push(eq(trades.moodBeforeId, filters.moodTagId));
   if (filters.q) {
     const pattern = `%${filters.q}%`;
     conditions.push(
@@ -66,11 +76,14 @@ export async function listTrades(filters: TradeFilters = {}) {
     );
   }
 
+  const sortColumn = SORT_COLUMNS[sort?.sortBy ?? "entryAt"];
+  const orderBy = sort?.sortDir === "asc" ? asc(sortColumn) : desc(sortColumn);
+
   return db
     .select()
     .from(trades)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(trades.entryAt));
+    .orderBy(orderBy);
 }
 
 /** All trade -> setup tag id associations, grouped by trade id — used by

@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/table";
 import { ImportTradesDialog } from "@/components/trades/ImportTradesDialog";
 import { TradesFilterBar } from "@/components/trades/TradesFilterBar";
-import { parseTradeFilters } from "@/lib/tradeFilters";
-import { listActiveSetupTags } from "@/server/queries/rules";
+import { parseTradeFilters, parseTradeSort } from "@/lib/tradeFilters";
+import type { TradeSortField } from "@/lib/constants";
+import { listActiveMoodTags, listActiveSetupTags } from "@/server/queries/rules";
 import { listTrades } from "@/server/queries/trades";
 
 export default async function TradesPage({
@@ -22,15 +23,39 @@ export default async function TradesPage({
 }) {
   const rawParams = await searchParams;
   const filters = parseTradeFilters(rawParams);
+  const sort = parseTradeSort(rawParams);
   const hasFilters = Object.values(filters).some((v) => v !== undefined);
 
-  const [trades, setupTags] = await Promise.all([listTrades(filters), listActiveSetupTags()]);
+  const [trades, setupTags, moodTags] = await Promise.all([
+    listTrades(filters, sort),
+    listActiveSetupTags(),
+    listActiveMoodTags(),
+  ]);
 
   const exportParams = new URLSearchParams(
     Object.entries(rawParams).flatMap(([key, value]) =>
       value == null ? [] : [[key, Array.isArray(value) ? value[0] : value]],
     ),
   );
+
+  function sortHref(field: TradeSortField) {
+    const params = new URLSearchParams(
+      Object.entries(rawParams).flatMap(([key, value]) =>
+        value == null || key === "sort" || key === "dir"
+          ? []
+          : [[key, Array.isArray(value) ? value[0] : value]],
+      ),
+    );
+    const nextDir = sort?.sortBy === field && sort.sortDir === "desc" ? "asc" : "desc";
+    params.set("sort", field);
+    params.set("dir", nextDir);
+    return `?${params.toString()}`;
+  }
+
+  function sortIndicator(field: TradeSortField) {
+    if (sort?.sortBy !== field) return null;
+    return sort.sortDir === "asc" ? " ↑" : " ↓";
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -55,19 +80,31 @@ export default async function TradesPage({
         </div>
       </div>
 
-      <TradesFilterBar setupTags={setupTags} />
+      <TradesFilterBar setupTags={setupTags} moodTags={moodTags} />
 
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Entry</TableHead>
+              <TableHead>
+                <Link href={sortHref("entryAt")} className="hover:underline">
+                  Entry{sortIndicator("entryAt")}
+                </Link>
+              </TableHead>
               <TableHead>Direction</TableHead>
               <TableHead>Session</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Outcome</TableHead>
-              <TableHead>Planned R:R</TableHead>
-              <TableHead>P&amp;L</TableHead>
+              <TableHead>
+                <Link href={sortHref("riskRewardPlanned")} className="hover:underline">
+                  Planned R:R{sortIndicator("riskRewardPlanned")}
+                </Link>
+              </TableHead>
+              <TableHead>
+                <Link href={sortHref("pnl")} className="hover:underline">
+                  P&amp;L{sortIndicator("pnl")}
+                </Link>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
