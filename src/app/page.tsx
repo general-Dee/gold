@@ -4,6 +4,7 @@ import { ChecklistStatusCard } from "@/components/dashboard/ChecklistStatusCard"
 import { ChecklistStreakCard } from "@/components/dashboard/ChecklistStreakCard";
 import { QuickStats } from "@/components/dashboard/QuickStats";
 import { StreakCard } from "@/components/dashboard/StreakCard";
+import { TradeStreakCard } from "@/components/dashboard/TradeStreakCard";
 import { EquityCurveChart } from "@/components/analytics/EquityCurveChart";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
   getBadgeUnlocks,
   getTradeAdherenceHistory,
   getMostRecentTradeViolations,
+  getTradeOutcomeStreaks,
   computeStreaks,
 } from "@/server/queries/gamification";
 import { listTrades } from "@/server/queries/trades";
@@ -35,6 +37,7 @@ export default async function DashboardPage() {
     balance,
     goalProgress,
     violation,
+    tradeStreaks,
   ] = await Promise.all([
     getTradeAdherenceHistory(),
     getBadgeUnlocks(),
@@ -48,6 +51,7 @@ export default async function DashboardPage() {
     getCurrentBalance(),
     getGoalProgress(),
     getMostRecentTradeViolations(),
+    getTradeOutcomeStreaks(),
   ]);
 
   const { currentStreak, longestStreak } = computeStreaks(history);
@@ -108,11 +112,12 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <StreakCard currentStreak={currentStreak} longestStreak={longestStreak} />
         <QuickStats winRate={winRate} avgRealizedR={avgRealizedR} adherence30d={adherence30d} />
         <ChecklistStatusCard {...checklistStatus} />
         <ChecklistStreakCard {...checklistStreaks} />
+        <TradeStreakCard {...tradeStreaks} />
       </div>
 
       <Card>

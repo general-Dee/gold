@@ -11,13 +11,22 @@ let computeStreaks: typeof import("@/server/queries/gamification").computeStreak
 let getTradeAdherenceHistory: typeof import("@/server/queries/gamification").getTradeAdherenceHistory;
 let getMonthlyAverageAdherence: typeof import("@/server/queries/gamification").getMonthlyAverageAdherence;
 let getMostRecentTradeViolations: typeof import("@/server/queries/gamification").getMostRecentTradeViolations;
+let computeOutcomeStreaks: typeof import("@/server/queries/gamification").computeOutcomeStreaks;
+let getTradeOutcomeHistory: typeof import("@/server/queries/gamification").getTradeOutcomeHistory;
 
 type TradeAdherence = Awaited<ReturnType<typeof getTradeAdherenceHistory>>[number];
+type TradeOutcomePoint = Awaited<ReturnType<typeof getTradeOutcomeHistory>>[number];
 
 beforeAll(async () => {
   ({ db, schema } = await bootstrapTestDb());
-  ({ computeStreaks, getTradeAdherenceHistory, getMonthlyAverageAdherence, getMostRecentTradeViolations } =
-    await import("@/server/queries/gamification"));
+  ({
+    computeStreaks,
+    getTradeAdherenceHistory,
+    getMonthlyAverageAdherence,
+    getMostRecentTradeViolations,
+    computeOutcomeStreaks,
+    getTradeOutcomeHistory,
+  } = await import("@/server/queries/gamification"));
 });
 
 const makeAdherence = (isAdherent: boolean): TradeAdherence => ({
@@ -73,6 +82,61 @@ describe("computeStreaks", () => {
       currentStreak: 0,
       longestStreak: 0,
     });
+  });
+});
+
+describe("computeOutcomeStreaks", () => {
+  const makeOutcome = (outcome: "win" | "loss" | "breakeven"): TradeOutcomePoint => ({
+    tradeId: "t",
+    entryAt: "2026-07-30T00:00:00.000Z",
+    outcome,
+  });
+
+  it("returns zeros/null for an empty history", () => {
+    expect(computeOutcomeStreaks([])).toEqual({
+      currentStreak: 0,
+      currentStreakType: null,
+      longestWinStreak: 0,
+      longestLossStreak: 0,
+    });
+  });
+
+  it("counts an unbroken run of wins", () => {
+    const history = ["win", "win", "win"].map((o) => makeOutcome(o as "win"));
+    expect(computeOutcomeStreaks(history)).toEqual({
+      currentStreak: 3,
+      currentStreakType: "win",
+      longestWinStreak: 3,
+      longestLossStreak: 0,
+    });
+  });
+
+  it("counts an unbroken run of losses", () => {
+    const history = ["loss", "loss"].map((o) => makeOutcome(o as "loss"));
+    expect(computeOutcomeStreaks(history)).toEqual({
+      currentStreak: 2,
+      currentStreakType: "loss",
+      longestWinStreak: 0,
+      longestLossStreak: 2,
+    });
+  });
+
+  it("tracks win and loss streaks independently through alternating outcomes", () => {
+    const history = (["win", "win", "loss", "win", "loss", "loss", "loss"] as const).map(makeOutcome);
+    const result = computeOutcomeStreaks(history);
+    expect(result.currentStreak).toBe(3);
+    expect(result.currentStreakType).toBe("loss");
+    expect(result.longestWinStreak).toBe(2);
+    expect(result.longestLossStreak).toBe(3);
+  });
+
+  it("resets both counters on a breakeven trade", () => {
+    const history = (["win", "win", "breakeven", "loss"] as const).map(makeOutcome);
+    const result = computeOutcomeStreaks(history);
+    expect(result.currentStreak).toBe(1);
+    expect(result.currentStreakType).toBe("loss");
+    expect(result.longestWinStreak).toBe(2);
+    expect(result.longestLossStreak).toBe(1);
   });
 });
 
@@ -197,6 +261,23 @@ describe("db-backed gamification queries", () => {
 
       const [entry] = await getTradeAdherenceHistory();
       expect(entry).toMatchObject({ tradeId: t.id, isAdherent: false });
+    });
+  });
+
+  describe("getTradeOutcomeHistory", () => {
+    it("excludes open trades (null outcome)", async () => {
+      await addTrade("2026-01-01T10:00:00.000Z", null, "open");
+      const closed = await addTrade("2026-01-02T10:00:00.000Z", "win", "closed");
+
+      const history = await getTradeOutcomeHistory();
+      expect(history.map((h) => h.tradeId)).toEqual([closed.id]);
+    });
+
+    it("orders trades chronologically by entryAt", async () => {
+      const t2 = await addTrade("2026-01-05T10:00:00.000Z", "win");
+      const t1 = await addTrade("2026-01-01T10:00:00.000Z", "loss");
+      const history = await getTradeOutcomeHistory();
+      expect(history.map((h) => h.tradeId)).toEqual([t1.id, t2.id]);
     });
   });
 

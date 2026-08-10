@@ -72,6 +72,53 @@ export async function getLongestStreak() {
   return computeStreaks(history).longestStreak;
 }
 
+export type TradeOutcomePoint = { tradeId: string; entryAt: string; outcome: "win" | "loss" | "breakeven" };
+
+// Chronological (entryAt asc), excludes open trades (outcome null) — unlike
+// getTradeAdherenceHistory, which intentionally includes them. Win/loss
+// streaks are only meaningful once a trade has resolved.
+export async function getTradeOutcomeHistory(): Promise<TradeOutcomePoint[]> {
+  const allTrades = await db.select().from(trades).orderBy(asc(trades.entryAt));
+  return allTrades
+    .filter((t): t is typeof t & { outcome: "win" | "loss" | "breakeven" } => t.outcome != null)
+    .map((t) => ({ tradeId: t.id, entryAt: t.entryAt, outcome: t.outcome }));
+}
+
+export type TradeOutcomeStreaks = {
+  currentStreak: number;
+  currentStreakType: "win" | "loss" | null;
+  longestWinStreak: number;
+  longestLossStreak: number;
+};
+
+// Two independent forward-loop counters (win/loss), each reset by the other
+// outcome AND by breakeven. Kept as its own loop rather than reusing
+// computeStreaks — mirrors this file's existing convention of duplicating
+// streak logic per system rather than coupling them (see checklist.ts).
+export function computeOutcomeStreaks(history: TradeOutcomePoint[]): TradeOutcomeStreaks {
+  let winStreak = 0;
+  let lossStreak = 0;
+  let longestWinStreak = 0;
+  let longestLossStreak = 0;
+
+  for (const t of history) {
+    winStreak = t.outcome === "win" ? winStreak + 1 : 0;
+    lossStreak = t.outcome === "loss" ? lossStreak + 1 : 0;
+    longestWinStreak = Math.max(longestWinStreak, winStreak);
+    longestLossStreak = Math.max(longestLossStreak, lossStreak);
+  }
+
+  const currentStreakType = winStreak > 0 ? "win" : lossStreak > 0 ? "loss" : null;
+  const currentStreak = winStreak > 0 ? winStreak : lossStreak;
+
+  return { currentStreak, currentStreakType, longestWinStreak, longestLossStreak };
+}
+
+export async function getTradeOutcomeStreaks(): Promise<TradeOutcomeStreaks> {
+  const history = await getTradeOutcomeHistory();
+  return computeOutcomeStreaks(history);
+}
+
 export async function getMonthlyAverageAdherence(yearMonth: string) {
   const history = await getTradeAdherenceHistory();
   const monthTrades = history.filter(
