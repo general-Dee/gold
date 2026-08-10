@@ -19,6 +19,9 @@ export type CheckStatus = (typeof CHECK_STATUSES)[number];
 export const TRANSACTION_TYPES = ["deposit", "withdrawal"] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
+export const PERIODS = ["weekly", "monthly"] as const;
+export type Period = (typeof PERIODS)[number];
+
 export const DEFAULT_RULES = [
   "Waited for session open (no pre-market impulse entries)",
   "Risk sized at or below 1% of account",

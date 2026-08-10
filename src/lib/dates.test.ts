@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { localDateKey, startOfLocalDay, startOfIsoWeek, getMonthGrid } from "@/lib/dates";
+import { localDateKey, startOfLocalDay, startOfIsoWeek, startOfMonth, getMonthGrid } from "@/lib/dates";
 
 describe("localDateKey", () => {
   it("pads single-digit month and day", () => {
@@ -43,6 +43,25 @@ describe("startOfIsoWeek", () => {
   it("shifts back to the previous Monday when given a Sunday", () => {
     const result = startOfIsoWeek(new Date(2026, 7, 2, 0, 0));
     expect(result.getTime()).toBe(expectedMonday.getTime());
+  });
+});
+
+describe("startOfMonth", () => {
+  const expectedFirst = new Date(2026, 6, 1);
+
+  it("returns the same day when given the 1st", () => {
+    const result = startOfMonth(new Date(2026, 6, 1, 9, 0));
+    expect(result.getTime()).toBe(expectedFirst.getTime());
+  });
+
+  it("shifts back to the 1st when given a mid-month day", () => {
+    const result = startOfMonth(new Date(2026, 6, 15, 23, 59));
+    expect(result.getTime()).toBe(expectedFirst.getTime());
+  });
+
+  it("shifts back to the 1st when given the last day of the month", () => {
+    const result = startOfMonth(new Date(2026, 6, 31, 0, 0));
+    expect(result.getTime()).toBe(expectedFirst.getTime());
   });
 });
 

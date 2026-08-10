@@ -28,6 +28,8 @@ export const rules = sqliteTable("rules", {
 export const setupTags = sqliteTable("setup_tags", {
   id: id(),
   name: text("name").notNull(),
+  notes: text("notes"),
+  expectedR: real("expected_r"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   ...timestamps,
 });
@@ -170,4 +172,19 @@ export const checklistCompletions = sqliteTable(
   (table) => [
     uniqueIndex("checklist_completions_item_date_idx").on(table.itemId, table.completionDate),
   ],
+);
+
+export const reflections = sqliteTable(
+  "reflections",
+  {
+    id: id(),
+    // 'weekly' | 'monthly'
+    period: text("period").notNull(),
+    // Normalized period start, 'YYYY-MM-DD' local date (Monday for weekly,
+    // 1st for monthly) — see src/lib/dates.ts.
+    periodStart: text("period_start").notNull(),
+    body: text("body").notNull(),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("reflections_period_start_idx").on(table.period, table.periodStart)],
 );

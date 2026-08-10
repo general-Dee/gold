@@ -18,6 +18,12 @@ export function startOfIsoWeek(d: Date = new Date()): Date {
   return start;
 }
 
+/** Local calendar month start, 00:00. Mirrors startOfIsoWeek's normalization
+ * role for the 'monthly' reflection period. */
+export function startOfMonth(d: Date = new Date()): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
 /** Calendar cells for a month grid, Sunday-first, padded with nulls so the
  * grid aligns to weekday columns. `month` is 1-indexed (1 = January). */
 export function getMonthGrid(year: number, month: number): (Date | null)[] {

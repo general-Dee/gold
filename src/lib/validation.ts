@@ -4,6 +4,7 @@ import {
   DIRECTIONS,
   DXY_BIASES,
   OUTCOMES,
+  PERIODS,
   SESSIONS,
   TRADE_STATUSES,
   TRANSACTION_TYPES,
@@ -92,6 +93,13 @@ export const ruleSchema = z.object({
 
 export const setupTagSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  notes: z.string().nullable().optional(),
+  expectedR: z.coerce.number().nullable().optional(),
+});
+
+export const setupTagDetailsSchema = z.object({
+  notes: z.string().nullable().optional(),
+  expectedR: z.coerce.number().nullable().optional(),
 });
 
 export const moodTagSchema = z.object({
@@ -119,3 +127,13 @@ export const accountTransactionSchema = z.object({
 });
 
 export type AccountTransactionInput = z.infer<typeof accountTransactionSchema>;
+
+export const reflectionFormSchema = z.object({
+  period: z.enum(PERIODS),
+  anchorDate: z.string().min(1),
+  body: z.string().min(1, "Reflection can't be empty"),
+});
+
+export const reflectionBodySchema = z.object({
+  body: z.string().min(1, "Reflection can't be empty"),
+});
