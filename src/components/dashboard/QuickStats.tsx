@@ -26,7 +26,7 @@ export function QuickStats({
       <CardHeader>
         <CardTitle>Quick stats</CardTitle>
       </CardHeader>
-      <CardContent className="grid grid-cols-3 gap-4">
+      <CardContent className="flex flex-col gap-3">
         <Stat label="Win rate" value={pct(winRate)} />
         <Stat label="Avg realized R" value={rMultiple(avgRealizedR)} />
         <Stat label="30-day adherence" value={pct(adherence30d)} />
