@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AdherenceTrendChart } from "@/components/analytics/AdherenceTrendChart";
 import { BreakdownBarChart } from "@/components/analytics/BreakdownBarChart";
 import { CorrelationChart } from "@/components/analytics/CorrelationChart";
@@ -124,8 +125,11 @@ export default async function AnalyticsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex items-center justify-between">
           <CardTitle>Performance by setup</CardTitle>
+          <Link href="/setups" className="text-sm text-muted-foreground hover:underline">
+            View all setups →
+          </Link>
         </CardHeader>
         <CardContent>
           <BreakdownBarChart groups={bySetupTag} linkBase="/setups" />
@@ -146,7 +150,7 @@ export default async function AnalyticsPage() {
           <CardTitle>Performance by mood (before trade)</CardTitle>
         </CardHeader>
         <CardContent>
-          <BreakdownBarChart groups={byMoodBefore} />
+          <BreakdownBarChart groups={byMoodBefore} linkBase="/moods" />
         </CardContent>
       </Card>
 

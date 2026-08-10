@@ -61,8 +61,11 @@ export default async function RulesPage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex items-center justify-between">
           <CardTitle>Setup tags</CardTitle>
+          <Link href="/setups" className="text-sm text-muted-foreground hover:underline">
+            View all setups →
+          </Link>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <ul className="flex flex-wrap gap-2">
@@ -106,7 +109,9 @@ export default async function RulesPage() {
                 key={tag.id}
                 className="flex items-center gap-2 rounded-full border px-3 py-1 text-sm"
               >
-                {tag.name}
+                <Link href={`/moods/${tag.id}`} className="hover:underline">
+                  {tag.name}
+                </Link>
                 <span className="text-xs text-muted-foreground">({tag.category})</span>
                 <form action={archiveMoodTagAction.bind(null, tag.id)}>
                   <button type="submit" className="text-muted-foreground hover:text-foreground">
