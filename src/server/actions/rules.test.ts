@@ -22,6 +22,7 @@ let archiveSetupTagAction: typeof import("@/server/actions/rules").archiveSetupT
 let updateSetupTagDetailsAction: typeof import("@/server/actions/rules").updateSetupTagDetailsAction;
 let createMoodTagAction: typeof import("@/server/actions/rules").createMoodTagAction;
 let archiveMoodTagAction: typeof import("@/server/actions/rules").archiveMoodTagAction;
+let updateMoodTagDetailsAction: typeof import("@/server/actions/rules").updateMoodTagDetailsAction;
 let createRule: typeof import("@/server/queries/rules").createRule;
 let createSetupTag: typeof import("@/server/queries/rules").createSetupTag;
 let createMoodTag: typeof import("@/server/queries/rules").createMoodTag;
@@ -38,6 +39,7 @@ beforeAll(async () => {
     updateSetupTagDetailsAction,
     createMoodTagAction,
     archiveMoodTagAction,
+    updateMoodTagDetailsAction,
   } = await import("@/server/actions/rules"));
   ({ createRule, createSetupTag, createMoodTag } = await import("@/server/queries/rules"));
 });
@@ -217,5 +219,34 @@ describe("archiveMoodTagAction", () => {
     const [row] = await db.select().from(schema.moodTags);
     expect(row.isActive).toBe(false);
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
+  });
+});
+
+describe("updateMoodTagDetailsAction", () => {
+  it("updates notes and expectedR, revalidating /rules and /moods/[id]", async () => {
+    const tag = await createMoodTag("Anxious", "before");
+
+    await updateMoodTagDetailsAction(
+      tag.id,
+      buildFormData({ notes: "Tends to overtrade", expectedR: "-0.5" }),
+    );
+
+    const [row] = await db.select().from(schema.moodTags);
+    expect(row).toMatchObject({ notes: "Tends to overtrade", expectedR: -0.5 });
+    expect(revalidatePath).toHaveBeenCalledWith("/rules");
+    expect(revalidatePath).toHaveBeenCalledWith(`/moods/${tag.id}`);
+  });
+
+  it("treats empty-string fields as null", async () => {
+    const tag = await createMoodTag("Anxious", "before");
+    await updateMoodTagDetailsAction(
+      tag.id,
+      buildFormData({ notes: "Some notes", expectedR: "2" }),
+    );
+
+    await updateMoodTagDetailsAction(tag.id, buildFormData({ notes: "", expectedR: "" }));
+
+    const [row] = await db.select().from(schema.moodTags);
+    expect(row).toMatchObject({ notes: null, expectedR: null });
   });
 });

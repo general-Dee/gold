@@ -39,6 +39,8 @@ export const moodTags = sqliteTable("mood_tags", {
   name: text("name").notNull(),
   // 'before' | 'after' | 'both'
   category: text("category").notNull().default("both"),
+  notes: text("notes"),
+  expectedR: real("expected_r"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   ...timestamps,
 });

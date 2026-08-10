@@ -9,10 +9,17 @@ import {
   createRule,
   createSetupTag,
   reorderRules,
+  updateMoodTagDetails,
   updateRuleText,
   updateSetupTagDetails,
 } from "@/server/queries/rules";
-import { moodTagSchema, ruleSchema, setupTagDetailsSchema, setupTagSchema } from "@/lib/validation";
+import {
+  moodTagDetailsSchema,
+  moodTagSchema,
+  ruleSchema,
+  setupTagDetailsSchema,
+  setupTagSchema,
+} from "@/lib/validation";
 
 const emptyToNull = (v: FormDataEntryValue | null) => (v === "" || v == null ? null : v);
 
@@ -71,4 +78,14 @@ export async function createMoodTagAction(formData: FormData) {
 export async function archiveMoodTagAction(id: string) {
   await archiveMoodTag(id);
   revalidatePath("/rules");
+}
+
+export async function updateMoodTagDetailsAction(id: string, formData: FormData) {
+  const { notes, expectedR } = moodTagDetailsSchema.parse({
+    notes: emptyToNull(formData.get("notes")),
+    expectedR: emptyToNull(formData.get("expectedR")),
+  });
+  await updateMoodTagDetails(id, { notes: notes ?? null, expectedR: expectedR ?? null });
+  revalidatePath("/rules");
+  revalidatePath(`/moods/${id}`);
 }

@@ -13,12 +13,21 @@ let seedDefaultsIfEmpty: typeof import("@/server/queries/rules").seedDefaultsIfE
 let createSetupTag: typeof import("@/server/queries/rules").createSetupTag;
 let getSetupTagById: typeof import("@/server/queries/rules").getSetupTagById;
 let updateSetupTagDetails: typeof import("@/server/queries/rules").updateSetupTagDetails;
+let createMoodTag: typeof import("@/server/queries/rules").createMoodTag;
+let getMoodTagById: typeof import("@/server/queries/rules").getMoodTagById;
+let updateMoodTagDetails: typeof import("@/server/queries/rules").updateMoodTagDetails;
 
 beforeAll(async () => {
   ({ db, schema } = await bootstrapTestDb());
-  ({ seedDefaultsIfEmpty, createSetupTag, getSetupTagById, updateSetupTagDetails } = await import(
-    "@/server/queries/rules"
-  ));
+  ({
+    seedDefaultsIfEmpty,
+    createSetupTag,
+    getSetupTagById,
+    updateSetupTagDetails,
+    createMoodTag,
+    getMoodTagById,
+    updateMoodTagDetails,
+  } = await import("@/server/queries/rules"));
 });
 
 beforeEach(async () => {
@@ -94,6 +103,44 @@ describe("updateSetupTagDetails", () => {
     await updateSetupTagDetails(tag.id, { notes: null, expectedR: null });
 
     const result = await getSetupTagById(tag.id);
+    expect(result).toMatchObject({ notes: null, expectedR: null });
+  });
+});
+
+describe("getMoodTagById", () => {
+  it("returns the matching row", async () => {
+    const tag = await createMoodTag("Calm", "both");
+    const result = await getMoodTagById(tag.id);
+    expect(result).toMatchObject({ id: tag.id, name: "Calm" });
+  });
+
+  it("returns null when no row matches", async () => {
+    expect(await getMoodTagById("nonexistent")).toBeNull();
+  });
+});
+
+describe("updateMoodTagDetails", () => {
+  it("updates notes and expectedR, leaving name and isActive untouched", async () => {
+    const tag = await createMoodTag("Anxious", "before");
+
+    await updateMoodTagDetails(tag.id, { notes: "Tends to overtrade", expectedR: -0.5 });
+
+    const result = await getMoodTagById(tag.id);
+    expect(result).toMatchObject({
+      name: "Anxious",
+      notes: "Tends to overtrade",
+      expectedR: -0.5,
+      isActive: true,
+    });
+  });
+
+  it("can clear notes/expectedR back to null", async () => {
+    const tag = await createMoodTag("Anxious", "before");
+    await updateMoodTagDetails(tag.id, { notes: "Some notes", expectedR: -1 });
+
+    await updateMoodTagDetails(tag.id, { notes: null, expectedR: null });
+
+    const result = await getMoodTagById(tag.id);
     expect(result).toMatchObject({ notes: null, expectedR: null });
   });
 });

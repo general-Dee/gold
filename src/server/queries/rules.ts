@@ -84,6 +84,19 @@ export async function archiveMoodTag(id: string) {
   await db.update(moodTags).set({ isActive: false }).where(eq(moodTags.id, id));
 }
 
+export async function getMoodTagById(id: string) {
+  const [row] = await db.select().from(moodTags).where(eq(moodTags.id, id));
+  return row ?? null;
+}
+
+// notes/expectedR only — mirrors updateSetupTagDetails's scoped-field-update.
+export async function updateMoodTagDetails(
+  id: string,
+  details: { notes: string | null; expectedR: number | null },
+) {
+  await db.update(moodTags).set(details).where(eq(moodTags.id, id));
+}
+
 /** Seeds example rules/tags on first run only — never overwrites existing data. */
 export async function seedDefaultsIfEmpty() {
   const existingRules = await db.select().from(rules).limit(1);

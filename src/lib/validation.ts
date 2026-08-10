@@ -107,6 +107,11 @@ export const moodTagSchema = z.object({
   category: z.enum(["before", "after", "both"]).default("both"),
 });
 
+export const moodTagDetailsSchema = z.object({
+  notes: z.string().nullable().optional(),
+  expectedR: z.coerce.number().nullable().optional(),
+});
+
 export const checklistItemSchema = z.object({
   text: z.string().min(1, "Item text is required"),
 });

@@ -43,6 +43,13 @@
       "when": 1786028693149,
       "tag": "0005_fresh_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786354183157,
+      "tag": "0006_futuristic_hammerhead",
+      "breakpoints": true
     }
   ]
 }
