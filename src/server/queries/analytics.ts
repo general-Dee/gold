@@ -96,6 +96,20 @@ export async function getBreakdownByMoodBefore(): Promise<BreakdownGroup[]> {
   );
 }
 
+export async function getBreakdownByDxyBias(): Promise<BreakdownGroup[]> {
+  return breakdownBy(
+    (t) => t.dxyBias,
+    (bias) => bias.charAt(0).toUpperCase() + bias.slice(1),
+  );
+}
+
+export async function getBreakdownByNewsNearby(): Promise<BreakdownGroup[]> {
+  return breakdownBy(
+    (t) => (t.newsNearby ? "yes" : "no"),
+    (key) => (key === "yes" ? "News nearby" : "No news nearby"),
+  );
+}
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export async function getBreakdownByDayOfWeek(): Promise<BreakdownGroup[]> {

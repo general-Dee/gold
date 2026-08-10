@@ -10,7 +10,9 @@ import {
   getAdherenceTrend,
   getAverageRiskReward,
   getBreakdownByDayOfWeek,
+  getBreakdownByDxyBias,
   getBreakdownByMoodBefore,
+  getBreakdownByNewsNearby,
   getBreakdownBySession,
   getBreakdownBySetupTag,
   getEquityCurve,
@@ -35,6 +37,8 @@ export default async function AnalyticsPage() {
     bySession,
     byMoodBefore,
     byDayOfWeek,
+    byDxyBias,
+    byNewsNearby,
     rDistribution,
   ] = await Promise.all([
     getWinRate(),
@@ -48,6 +52,8 @@ export default async function AnalyticsPage() {
     getBreakdownBySession(),
     getBreakdownByMoodBefore(),
     getBreakdownByDayOfWeek(),
+    getBreakdownByDxyBias(),
+    getBreakdownByNewsNearby(),
     getRMultipleDistribution(),
   ]);
 
@@ -160,6 +166,24 @@ export default async function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           <BreakdownBarChart groups={byDayOfWeek} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance by DXY bias</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BreakdownBarChart groups={byDxyBias} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance by news proximity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BreakdownBarChart groups={byNewsNearby} />
         </CardContent>
       </Card>
     </div>

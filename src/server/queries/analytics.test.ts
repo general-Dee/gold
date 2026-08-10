@@ -41,6 +41,8 @@ type TradeOverrides = {
   setupTagIds?: string[];
   moodBeforeId?: string | null;
   status?: "open" | "closed";
+  dxyBias?: "up" | "down" | "flat" | null;
+  newsNearby?: boolean;
 };
 
 async function addTrade(opts: TradeOverrides) {
@@ -59,6 +61,8 @@ async function addTrade(opts: TradeOverrides) {
       riskRewardPlanned: opts.riskRewardPlanned ?? null,
       riskRewardRealized: opts.riskRewardRealized ?? null,
       moodBeforeId: opts.moodBeforeId ?? null,
+      dxyBias: opts.dxyBias ?? null,
+      newsNearby: opts.newsNearby ?? false,
     })
     .returning();
 
@@ -311,6 +315,37 @@ describe("getBreakdownByDayOfWeek", () => {
     const result = await analytics.getBreakdownByDayOfWeek();
 
     expect(result.map((r) => r.label)).toEqual(["Sun", "Mon"]);
+  });
+});
+
+describe("getBreakdownByDxyBias", () => {
+  it("groups trades by DXY bias and excludes trades with no bias set", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, dxyBias: "up" });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, dxyBias: "up" });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, dxyBias: "down" });
+    await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: "win", riskRewardRealized: 3 });
+
+    const result = await analytics.getBreakdownByDxyBias();
+
+    expect(result).toEqual([
+      { key: "up", label: "Up", count: 2, winRate: 0.5, avgR: 0, totalPnl: 0, expectancy: null },
+      { key: "down", label: "Down", count: 1, winRate: 1, avgR: 2, totalPnl: 0, expectancy: null },
+    ]);
+  });
+});
+
+describe("getBreakdownByNewsNearby", () => {
+  it("splits trades into news-nearby and no-news buckets", async () => {
+    await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, newsNearby: true });
+    await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, newsNearby: false });
+    await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, newsNearby: false });
+
+    const result = await analytics.getBreakdownByNewsNearby();
+
+    expect(result).toEqual([
+      { key: "no", label: "No news nearby", count: 2, winRate: 1, avgR: 1.5, totalPnl: 0, expectancy: null },
+      { key: "yes", label: "News nearby", count: 1, winRate: 0, avgR: -1, totalPnl: 0, expectancy: null },
+    ]);
   });
 });
 
