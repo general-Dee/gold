@@ -6,8 +6,8 @@ A personal trading journal for XAUUSD (gold) discretionary trading. Log trades w
 
 - [Next.js 16](https://nextjs.org) (App Router) + React 19 + TypeScript
 - [Tailwind CSS v4](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com)
-- [Drizzle ORM](https://orm.drizzle.team) over SQLite (via `@libsql/client`)
-- [Vitest](https://vitest.dev) for tests
+- [Firestore](https://firebase.google.com/docs/firestore) via the `firebase-admin` SDK
+- [Vitest](https://vitest.dev) for tests, against the Firestore emulator
 
 ## Getting started
 
@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). A SQLite database is created automatically on first run at `data/trading-journal.db` (override with the `DATABASE_URL` env var); uploaded trade chart images are stored under `data/uploads/`. Both are gitignored.
+Open [http://localhost:3000](http://localhost:3000). Data lives in Firestore — set `FIREBASE_PROJECT_ID` and either `FIRESTORE_EMULATOR_HOST` (local dev, see `npm run emulator`) or `FIREBASE_SERVICE_ACCOUNT_KEY` (a real project) before starting the server. Uploaded trade chart images are stored on local disk under `data/uploads/` (gitignored) — this app is designed to run as a long-lived, self-hosted Node process, not on ephemeral/serverless compute.
 
 ## Scripts
 
@@ -28,21 +28,21 @@ Open [http://localhost:3000](http://localhost:3000). A SQLite database is create
 | `npm run lint` | Lint with ESLint |
 | `npm run test` | Run the test suite once |
 | `npm run test:watch` | Run tests in watch mode |
+| `npm run emulator` | Start the local Firestore emulator |
 
-Schema changes go through Drizzle Kit:
-
-```bash
-npx drizzle-kit generate   # generate a migration from src/server/db/schema.ts
-npx drizzle-kit push       # push schema changes to the local dev database
-```
+Firestore is schemaless, so there's no migration step — `npm run test` starts a throwaway Firestore
+emulator instance (`firebase emulators:exec`) and runs the suite against it. Collection shapes are
+defined only in TypeScript, in `src/server/firebase/collections.ts`. Security rules
+(`firestore.rules`) and composite indexes (`firestore.indexes.json`) are deployed with
+`firebase deploy --only firestore`.
 
 ## Project layout
 
 - `src/app/` — routes (dashboard, trades, analytics, calendar, checklist, rules, account, achievements)
 - `src/components/` — UI components, grouped by feature area, plus shared `ui/` primitives (shadcn)
-- `src/server/queries/` — Drizzle read/write logic per domain
+- `src/server/queries/` — Firestore read/write logic per domain
 - `src/server/actions/` — `"use server"` mutation entry points called directly from client forms
 - `src/lib/` — pure, framework-independent logic (R:R/position-size calculations, CSV import/export, zod validation schemas, date helpers)
-- `drizzle/` — SQL migrations generated from `src/server/db/schema.ts`
+- `src/server/firebase/` — Firestore client, collection converters/refs, and shared write helpers (batching, id generation)
 
 See `CLAUDE.md` for architecture notes and conventions relevant when making changes to this codebase.

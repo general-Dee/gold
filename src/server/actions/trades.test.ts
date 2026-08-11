@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 import { tradeSchema } from "@/lib/validation";
 
 // revalidatePath/redirect require Next's request-scoped internals, which
@@ -14,20 +14,21 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 // createTradeAction/updateTradeAction/deleteTradeAction transitively import
-// "@/server/db/client", which creates its sqlite client as a module-load side
-// effect. A static top-level import would run before bootstrapTestDb() sets
-// DATABASE_URL, so they're imported dynamically inside beforeAll instead (see
-// gamification.test.ts for the failure mode this avoids). tradeSchema itself
-// has no db dependency, so it's safe to import statically above.
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// "@/server/firebase/client", which binds to the emulator project as a
+// module-load side effect. A static top-level import would run before
+// bootstrapTestFirestore() sets FIREBASE_PROJECT_ID, so they're imported
+// dynamically inside beforeAll instead. tradeSchema itself has no db
+// dependency, so it's safe to import statically above.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let tradesCollection: typeof import("@/server/firebase/collections").tradesCollection;
 let createTradeAction: typeof import("@/server/actions/trades").createTradeAction;
 let updateTradeAction: typeof import("@/server/actions/trades").updateTradeAction;
 let deleteTradeAction: typeof import("@/server/actions/trades").deleteTradeAction;
 let createTrade: typeof import("@/server/queries/trades").createTrade;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ tradesCollection } = await import("@/server/firebase/collections"));
   ({ createTradeAction, updateTradeAction, deleteTradeAction } = await import(
     "@/server/actions/trades"
   ));
@@ -35,16 +36,14 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.delete(schema.badgeUnlocks);
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.tradeSetupTags);
-  await db.delete(schema.trades);
-  await db.delete(schema.rules);
-  await db.delete(schema.setupTags);
-  await db.delete(schema.moodTags);
+  await wipe();
   vi.mocked(revalidatePath).mockClear();
   vi.mocked(redirect).mockClear();
 });
+
+async function allTradeRows() {
+  return (await tradesCollection().get()).docs.map((d) => d.data());
+}
 
 function buildRawInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -65,7 +64,7 @@ describe("createTradeAction", () => {
     expect(result.trade).toMatchObject({ direction: "long", entryPrice: 100 });
     expect(Array.isArray(result.unlocked)).toBe(true);
 
-    const rows = await db.select().from(schema.trades);
+    const rows = await allTradeRows();
     expect(rows).toHaveLength(1);
 
     expect(revalidatePath).toHaveBeenCalledWith("/trades");
@@ -76,7 +75,7 @@ describe("createTradeAction", () => {
   it("throws and performs no writes when input fails schema validation", async () => {
     await expect(createTradeAction(buildRawInput({ direction: "sideways" }))).rejects.toThrow();
 
-    const rows = await db.select().from(schema.trades);
+    const rows = await allTradeRows();
     expect(rows).toEqual([]);
     expect(revalidatePath).not.toHaveBeenCalled();
     expect(redirect).not.toHaveBeenCalled();
@@ -103,14 +102,14 @@ describe("updateTradeAction", () => {
       updateTradeAction(trade.id, buildRawInput({ direction: "sideways" })),
     ).rejects.toThrow();
 
-    const [row] = await db.select().from(schema.trades);
-    expect(row.entryPrice).toBe(100);
+    const [row] = await allTradeRows();
+    expect(row!.entryPrice).toBe(100);
     expect(revalidatePath).not.toHaveBeenCalled();
     expect(redirect).not.toHaveBeenCalled();
   });
 
   // updateTrade in the query layer has no existence guard — it's a bare
-  // .update().where(eq(id)).returning(), so a bogus id just updates zero rows
+  // .set() on a doc ref, so a bogus id just creates/overwrites that doc
   // rather than throwing. This documents that boundary behavior.
   it("still redirects for an id that doesn't exist, since the query layer silently no-ops", async () => {
     await updateTradeAction("does-not-exist", buildRawInput());
@@ -125,7 +124,7 @@ describe("deleteTradeAction", () => {
 
     await deleteTradeAction(trade.id);
 
-    const rows = await db.select().from(schema.trades);
+    const rows = await allTradeRows();
     expect(rows).toEqual([]);
     expect(revalidatePath).toHaveBeenCalledWith("/trades");
     expect(revalidatePath).toHaveBeenCalledWith("/");

@@ -1,37 +1,36 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { revalidatePath } from "next/cache";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 import { rowsToCsv } from "@/lib/csv";
 
 // revalidatePath requires Next's request-scoped internals, which don't exist
 // in a bare vitest run — calling it unmocked throws immediately.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-// importTradesAction transitively imports "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so it's
-// imported dynamically inside beforeAll instead (see gamification.test.ts for
-// the failure mode this avoids). rowsToCsv itself has no db dependency, so
-// it's safe to import statically above.
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// importTradesAction transitively imports "@/server/firebase/client", which
+// binds to the emulator project as a module-load side effect. A static
+// top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so it's imported dynamically inside beforeAll instead.
+// rowsToCsv itself has no db dependency, so it's safe to import statically
+// above.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let tradesCollection: typeof import("@/server/firebase/collections").tradesCollection;
 let importTradesAction: typeof import("@/server/actions/import").importTradesAction;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ tradesCollection } = await import("@/server/firebase/collections"));
   ({ importTradesAction } = await import("@/server/actions/import"));
 });
 
 beforeEach(async () => {
-  await db.delete(schema.badgeUnlocks);
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.tradeSetupTags);
-  await db.delete(schema.trades);
-  await db.delete(schema.rules);
-  await db.delete(schema.setupTags);
-  await db.delete(schema.moodTags);
+  await wipe();
   vi.mocked(revalidatePath).mockClear();
 });
+
+async function allTradeRows() {
+  return (await tradesCollection().get()).docs.map((d) => d.data());
+}
 
 // Full CSV export column set — mirrors queries/trades.test.ts's own IMPORT_HEADERS,
 // kept local since this file only needs one valid-row shape and one
@@ -104,7 +103,7 @@ describe("importTradesAction", () => {
     const result = await importTradesAction(fd);
 
     expect(result.importedCount).toBe(1);
-    expect(await db.select().from(schema.trades)).toHaveLength(1);
+    expect(await allTradeRows()).toHaveLength(1);
     expect(revalidatePath).toHaveBeenCalledWith("/trades");
     expect(revalidatePath).toHaveBeenCalledWith("/");
   });

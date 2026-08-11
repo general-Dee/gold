@@ -1,19 +1,16 @@
-import { desc, eq } from "drizzle-orm";
-import { db } from "@/server/db/client";
-import { reflections } from "@/server/db/schema";
+import { reflectionsCollection, type Reflection } from "@/server/firebase/collections";
+import { reflectionId } from "@/server/firebase/ids";
 import type { Period } from "@/lib/constants";
 
 export async function listReflections(period?: Period) {
-  return db
-    .select()
-    .from(reflections)
-    .where(period ? eq(reflections.period, period) : undefined)
-    .orderBy(desc(reflections.periodStart));
+  const snapshot = await reflectionsCollection().orderBy("periodStart", "desc").get();
+  const rows = snapshot.docs.map((doc) => doc.data());
+  return period ? rows.filter((row) => row.period === period) : rows;
 }
 
 export async function getReflectionById(id: string) {
-  const [row] = await db.select().from(reflections).where(eq(reflections.id, id));
-  return row ?? null;
+  const doc = await reflectionsCollection().doc(id).get();
+  return doc.exists ? doc.data()! : null;
 }
 
 export type ReflectionInput = { period: Period; periodStart: string; body: string };
@@ -21,25 +18,31 @@ export type ReflectionInput = { period: Period; periodStart: string; body: strin
 // periodStart is server-computed from a user-picked anchor date, not
 // user-typed, so a second "create" for a date that normalizes into an
 // already-covered period should update that entry's body in place rather
-// than erroring on the unique constraint — onConflictDoUpdate, the "do
-// update" sibling of checklist.ts's onConflictDoNothing.
-export async function upsertReflection(input: ReflectionInput) {
-  const [row] = await db
-    .insert(reflections)
-    .values(input)
-    .onConflictDoUpdate({
-      target: [reflections.period, reflections.periodStart],
-      set: { body: input.body, updatedAt: new Date().toISOString() },
-    })
-    .returning();
+// than creating a duplicate. The (period, periodStart) pair is the document
+// ID itself, so this is a plain overwrite rather than an onConflictDoUpdate.
+export async function upsertReflection(input: ReflectionInput): Promise<Reflection> {
+  const id = reflectionId(input.period, input.periodStart);
+  const ref = reflectionsCollection().doc(id);
+  const existing = await ref.get();
+  const now = new Date().toISOString();
+  const row: Reflection = existing.exists
+    ? { ...existing.data()!, body: input.body, updatedAt: now }
+    : {
+        id,
+        period: input.period,
+        periodStart: input.periodStart,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now,
+      };
+  await ref.set(row);
   return row;
 }
 
 export async function updateReflectionBody(id: string, body: string) {
-  await db
-    .update(reflections)
-    .set({ body, updatedAt: new Date().toISOString() })
-    .where(eq(reflections.id, id));
+  await reflectionsCollection()
+    .doc(id)
+    .update({ body, updatedAt: new Date().toISOString() });
 }
 
 // Real delete, not soft — unlike rules/setupTags/checklistItems, nothing
@@ -47,5 +50,5 @@ export async function updateReflectionBody(id: string, body: string) {
 // ever reads one. Mirrors deleteTrade's hard-delete precedent for
 // user-authored content the user explicitly removes.
 export async function deleteReflection(id: string) {
-  await db.delete(reflections).where(eq(reflections.id, id));
+  await reflectionsCollection().doc(id).delete();
 }

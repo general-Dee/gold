@@ -1,29 +1,31 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 import { tradeSchema } from "@/lib/validation";
 
-// Every function under test transitively imports "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so everything
-// is imported dynamically inside beforeAll instead (see gamification.test.ts
-// for the failure mode this avoids).
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// Every function under test transitively imports "@/server/firebase/client",
+// which binds to the emulator project as a module-load side effect. A
+// static top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so everything is imported dynamically inside
+// beforeAll instead.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let accountSettingsCollection: typeof import("@/server/firebase/collections").accountSettingsCollection;
 let account: typeof import("@/server/queries/account");
 let createTrade: typeof import("@/server/queries/trades").createTrade;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ accountSettingsCollection } = await import("@/server/firebase/collections"));
   account = await import("@/server/queries/account");
   ({ createTrade } = await import("@/server/queries/trades"));
 });
 
 beforeEach(async () => {
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.trades);
-  await db.delete(schema.accountTransactions);
-  await db.delete(schema.accountSettings);
+  await wipe();
 });
+
+async function allAccountSettingsRows() {
+  return (await accountSettingsCollection().get()).docs.map((d) => d.data());
+}
 
 async function addTrade(entryAt: string, pnl: number | null) {
   await createTrade(
@@ -42,7 +44,7 @@ async function addTrade(entryAt: string, pnl: number | null) {
 describe("seedDefaultAccountSettingsIfEmpty", () => {
   it("inserts a single zeroed row when empty", async () => {
     await account.seedDefaultAccountSettingsIfEmpty();
-    const rows = await db.select().from(schema.accountSettings);
+    const rows = await allAccountSettingsRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       startingBalance: 0,
@@ -54,7 +56,7 @@ describe("seedDefaultAccountSettingsIfEmpty", () => {
   it("does not insert a second row if one already exists", async () => {
     await account.seedDefaultAccountSettingsIfEmpty();
     await account.seedDefaultAccountSettingsIfEmpty();
-    expect(await db.select().from(schema.accountSettings)).toHaveLength(1);
+    expect(await allAccountSettingsRows()).toHaveLength(1);
   });
 });
 

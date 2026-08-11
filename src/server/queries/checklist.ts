@@ -1,83 +1,112 @@
-import { and, asc, eq, gte } from "drizzle-orm";
-import { db } from "@/server/db/client";
-import { checklistCompletions, checklistItems } from "@/server/db/schema";
+import {
+  checklistCompletionsCollection,
+  checklistItemsCollection,
+  type ChecklistCompletion,
+  type ChecklistItem,
+} from "@/server/firebase/collections";
+import { completionId, nanoid } from "@/server/firebase/ids";
+import { runBatch } from "@/server/firebase/batch";
 import { DEFAULT_CHECKLIST_ITEMS } from "@/lib/constants";
 import { localDateKey, startOfLocalDay } from "@/lib/dates";
 
+function isAlreadyExists(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code: unknown }).code === 6;
+}
+
+async function allChecklistItemsSortedByOrder(): Promise<ChecklistItem[]> {
+  const snapshot = await checklistItemsCollection().orderBy("sortOrder", "asc").get();
+  return snapshot.docs.map((doc) => doc.data());
+}
+
 export async function listActiveChecklistItems() {
-  return db
-    .select()
-    .from(checklistItems)
-    .where(and(eq(checklistItems.isActive, true)))
-    .orderBy(asc(checklistItems.sortOrder));
+  return (await allChecklistItemsSortedByOrder()).filter((item) => item.isActive);
 }
 
 export async function listAllChecklistItems() {
-  return db.select().from(checklistItems).orderBy(asc(checklistItems.sortOrder));
+  return allChecklistItemsSortedByOrder();
 }
 
-export async function createChecklistItem(text: string) {
-  const existing = await db.select().from(checklistItems);
-  const maxSort = existing.reduce((max, r) => Math.max(max, r.sortOrder), -1);
-  const [row] = await db
-    .insert(checklistItems)
-    .values({ text, sortOrder: maxSort + 1 })
-    .returning();
+export async function createChecklistItem(text: string): Promise<ChecklistItem> {
+  const lastSnapshot = await checklistItemsCollection().orderBy("sortOrder", "desc").limit(1).get();
+  const maxSort = lastSnapshot.empty ? -1 : lastSnapshot.docs[0]!.data().sortOrder;
+  const now = new Date().toISOString();
+  const row: ChecklistItem = {
+    id: nanoid(),
+    text,
+    sortOrder: maxSort + 1,
+    isActive: true,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await checklistItemsCollection().doc(row.id).set(row);
   return row;
 }
 
 export async function archiveChecklistItem(id: string) {
-  await db
-    .update(checklistItems)
-    .set({ isActive: false, archivedAt: new Date().toISOString() })
-    .where(eq(checklistItems.id, id));
+  await checklistItemsCollection()
+    .doc(id)
+    .update({ isActive: false, archivedAt: new Date().toISOString() });
 }
 
 export async function updateChecklistItemText(id: string, text: string) {
-  await db.update(checklistItems).set({ text }).where(eq(checklistItems.id, id));
+  await checklistItemsCollection().doc(id).update({ text });
 }
 
 export async function reorderChecklistItems(orderedIds: string[]) {
-  await Promise.all(
-    orderedIds.map((id, index) =>
-      db.update(checklistItems).set({ sortOrder: index }).where(eq(checklistItems.id, id)),
-    ),
-  );
+  await runBatch((batch) => {
+    orderedIds.forEach((id, index) => {
+      batch.update(checklistItemsCollection().doc(id), { sortOrder: index });
+    });
+  });
 }
 
 /** Seeds the default pre-market checklist items on first run only. */
 export async function seedDefaultChecklistItemsIfEmpty() {
-  const existing = await db.select().from(checklistItems).limit(1);
-  if (existing.length === 0) {
-    await db
-      .insert(checklistItems)
-      .values(DEFAULT_CHECKLIST_ITEMS.map((text, i) => ({ text, sortOrder: i })));
+  const existing = await checklistItemsCollection().limit(1).get();
+  if (existing.empty) {
+    const now = new Date().toISOString();
+    await runBatch((batch) => {
+      DEFAULT_CHECKLIST_ITEMS.forEach((text, i) => {
+        const row: ChecklistItem = {
+          id: nanoid(),
+          text,
+          sortOrder: i,
+          isActive: true,
+          archivedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        batch.set(checklistItemsCollection().doc(row.id), row);
+      });
+    });
   }
 }
 
 export async function getCompletionsForDate(date: string) {
-  return db
-    .select()
-    .from(checklistCompletions)
-    .where(eq(checklistCompletions.completionDate, date));
+  const snapshot = await checklistCompletionsCollection()
+    .where("completionDate", "==", date)
+    .get();
+  return snapshot.docs.map((doc) => doc.data());
 }
 
 export async function addCompletion(itemId: string, date: string) {
-  await db
-    .insert(checklistCompletions)
-    .values({ itemId, completionDate: date })
-    .onConflictDoNothing();
+  const ref = checklistCompletionsCollection().doc(completionId(itemId, date));
+  const row: ChecklistCompletion = {
+    id: ref.id,
+    itemId,
+    completionDate: date,
+    completedAt: new Date().toISOString(),
+  };
+  try {
+    await ref.create(row);
+  } catch (err) {
+    if (!isAlreadyExists(err)) throw err;
+  }
 }
 
 export async function removeCompletion(itemId: string, date: string) {
-  await db
-    .delete(checklistCompletions)
-    .where(
-      and(
-        eq(checklistCompletions.itemId, itemId),
-        eq(checklistCompletions.completionDate, date),
-      ),
-    );
+  await checklistCompletionsCollection().doc(completionId(itemId, date)).delete();
 }
 
 export async function getChecklistStatusForDate(date: string) {
@@ -105,13 +134,11 @@ export async function getChecklistHistory(days = 30): Promise<ChecklistHistoryPo
   since.setDate(since.getDate() - days);
   const sinceKey = localDateKey(since);
 
-  const [items, completions] = await Promise.all([
+  const [items, completionsSnapshot] = await Promise.all([
     listAllChecklistItems(),
-    db
-      .select()
-      .from(checklistCompletions)
-      .where(gte(checklistCompletions.completionDate, sinceKey)),
+    checklistCompletionsCollection().where("completionDate", ">=", sinceKey).get(),
   ]);
+  const completions = completionsSnapshot.docs.map((doc) => doc.data());
 
   const totalActiveAtQueryTime = items.filter((i) => i.isActive).length;
   const byDate = new Map<string, number>();

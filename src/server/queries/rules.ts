@@ -1,65 +1,90 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
-import { db } from "@/server/db/client";
-import { moodTags, rules, setupTags } from "@/server/db/schema";
+import {
+  moodTagsCollection,
+  rulesCollection,
+  setupTagsCollection,
+  type MoodTag,
+  type Rule,
+  type SetupTag,
+} from "@/server/firebase/collections";
+import { nanoid } from "@/server/firebase/ids";
+import { runBatch } from "@/server/firebase/batch";
 import { DEFAULT_MOOD_TAGS, DEFAULT_RULES, DEFAULT_SETUP_TAGS } from "@/lib/constants";
 
+async function allRulesSortedByOrder(): Promise<Rule[]> {
+  const snapshot = await rulesCollection().orderBy("sortOrder", "asc").get();
+  return snapshot.docs.map((doc) => doc.data());
+}
+
 export async function listActiveRules() {
-  return db
-    .select()
-    .from(rules)
-    .where(and(eq(rules.isActive, true), isNull(rules.archivedAt)))
-    .orderBy(asc(rules.sortOrder));
+  return (await allRulesSortedByOrder()).filter((r) => r.isActive && r.archivedAt === null);
 }
 
 export async function listAllRules() {
-  return db.select().from(rules).orderBy(asc(rules.sortOrder));
+  return allRulesSortedByOrder();
 }
 
-export async function createRule(text: string) {
-  const existing = await db.select().from(rules);
-  const maxSort = existing.reduce((max, r) => Math.max(max, r.sortOrder), -1);
-  const [row] = await db
-    .insert(rules)
-    .values({ text, sortOrder: maxSort + 1 })
-    .returning();
+export async function createRule(text: string): Promise<Rule> {
+  const lastSnapshot = await rulesCollection().orderBy("sortOrder", "desc").limit(1).get();
+  const maxSort = lastSnapshot.empty ? -1 : lastSnapshot.docs[0]!.data().sortOrder;
+  const now = new Date().toISOString();
+  const row: Rule = {
+    id: nanoid(),
+    text,
+    sortOrder: maxSort + 1,
+    isActive: true,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await rulesCollection().doc(row.id).set(row);
   return row;
 }
 
 export async function archiveRule(id: string) {
-  await db
-    .update(rules)
-    .set({ isActive: false, archivedAt: new Date().toISOString() })
-    .where(eq(rules.id, id));
+  await rulesCollection()
+    .doc(id)
+    .update({ isActive: false, archivedAt: new Date().toISOString() });
 }
 
 export async function updateRuleText(id: string, text: string) {
-  await db.update(rules).set({ text }).where(eq(rules.id, id));
+  await rulesCollection().doc(id).update({ text });
 }
 
 export async function reorderRules(orderedIds: string[]) {
-  await Promise.all(
-    orderedIds.map((id, index) =>
-      db.update(rules).set({ sortOrder: index }).where(eq(rules.id, id)),
-    ),
-  );
+  await runBatch((batch) => {
+    orderedIds.forEach((id, index) => {
+      batch.update(rulesCollection().doc(id), { sortOrder: index });
+    });
+  });
 }
 
 export async function listActiveSetupTags() {
-  return db.select().from(setupTags).where(eq(setupTags.isActive, true));
+  const snapshot = await setupTagsCollection().get();
+  return snapshot.docs.map((doc) => doc.data()).filter((t) => t.isActive);
 }
 
-export async function createSetupTag(name: string) {
-  const [row] = await db.insert(setupTags).values({ name }).returning();
+export async function createSetupTag(name: string): Promise<SetupTag> {
+  const now = new Date().toISOString();
+  const row: SetupTag = {
+    id: nanoid(),
+    name,
+    notes: null,
+    expectedR: null,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await setupTagsCollection().doc(row.id).set(row);
   return row;
 }
 
 export async function archiveSetupTag(id: string) {
-  await db.update(setupTags).set({ isActive: false }).where(eq(setupTags.id, id));
+  await setupTagsCollection().doc(id).update({ isActive: false });
 }
 
 export async function getSetupTagById(id: string) {
-  const [row] = await db.select().from(setupTags).where(eq(setupTags.id, id));
-  return row ?? null;
+  const doc = await setupTagsCollection().doc(id).get();
+  return doc.exists ? doc.data()! : null;
 }
 
 // notes/expectedR only — name/isActive untouched, matching updateRuleText's
@@ -68,25 +93,40 @@ export async function updateSetupTagDetails(
   id: string,
   details: { notes: string | null; expectedR: number | null },
 ) {
-  await db.update(setupTags).set(details).where(eq(setupTags.id, id));
+  await setupTagsCollection().doc(id).update(details);
 }
 
 export async function listActiveMoodTags() {
-  return db.select().from(moodTags).where(eq(moodTags.isActive, true));
+  const snapshot = await moodTagsCollection().get();
+  return snapshot.docs.map((doc) => doc.data()).filter((t) => t.isActive);
 }
 
-export async function createMoodTag(name: string, category: "before" | "after" | "both") {
-  const [row] = await db.insert(moodTags).values({ name, category }).returning();
+export async function createMoodTag(
+  name: string,
+  category: "before" | "after" | "both",
+): Promise<MoodTag> {
+  const now = new Date().toISOString();
+  const row: MoodTag = {
+    id: nanoid(),
+    name,
+    category,
+    notes: null,
+    expectedR: null,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await moodTagsCollection().doc(row.id).set(row);
   return row;
 }
 
 export async function archiveMoodTag(id: string) {
-  await db.update(moodTags).set({ isActive: false }).where(eq(moodTags.id, id));
+  await moodTagsCollection().doc(id).update({ isActive: false });
 }
 
 export async function getMoodTagById(id: string) {
-  const [row] = await db.select().from(moodTags).where(eq(moodTags.id, id));
-  return row ?? null;
+  const doc = await moodTagsCollection().doc(id).get();
+  return doc.exists ? doc.data()! : null;
 }
 
 // notes/expectedR only — mirrors updateSetupTagDetails's scoped-field-update.
@@ -94,25 +134,65 @@ export async function updateMoodTagDetails(
   id: string,
   details: { notes: string | null; expectedR: number | null },
 ) {
-  await db.update(moodTags).set(details).where(eq(moodTags.id, id));
+  await moodTagsCollection().doc(id).update(details);
 }
 
 /** Seeds example rules/tags on first run only — never overwrites existing data. */
 export async function seedDefaultsIfEmpty() {
-  const existingRules = await db.select().from(rules).limit(1);
-  if (existingRules.length === 0) {
-    await db
-      .insert(rules)
-      .values(DEFAULT_RULES.map((text, i) => ({ text, sortOrder: i })));
+  const now = new Date().toISOString();
+
+  const existingRules = await rulesCollection().limit(1).get();
+  if (existingRules.empty) {
+    await runBatch((batch) => {
+      DEFAULT_RULES.forEach((text, i) => {
+        const row: Rule = {
+          id: nanoid(),
+          text,
+          sortOrder: i,
+          isActive: true,
+          archivedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        batch.set(rulesCollection().doc(row.id), row);
+      });
+    });
   }
 
-  const existingSetupTags = await db.select().from(setupTags).limit(1);
-  if (existingSetupTags.length === 0) {
-    await db.insert(setupTags).values(DEFAULT_SETUP_TAGS.map((name) => ({ name })));
+  const existingSetupTags = await setupTagsCollection().limit(1).get();
+  if (existingSetupTags.empty) {
+    await runBatch((batch) => {
+      DEFAULT_SETUP_TAGS.forEach((name) => {
+        const row: SetupTag = {
+          id: nanoid(),
+          name,
+          notes: null,
+          expectedR: null,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        batch.set(setupTagsCollection().doc(row.id), row);
+      });
+    });
   }
 
-  const existingMoodTags = await db.select().from(moodTags).limit(1);
-  if (existingMoodTags.length === 0) {
-    await db.insert(moodTags).values(DEFAULT_MOOD_TAGS);
+  const existingMoodTags = await moodTagsCollection().limit(1).get();
+  if (existingMoodTags.empty) {
+    await runBatch((batch) => {
+      DEFAULT_MOOD_TAGS.forEach(({ name, category }) => {
+        const row: MoodTag = {
+          id: nanoid(),
+          name,
+          category,
+          notes: null,
+          expectedR: null,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        batch.set(moodTagsCollection().doc(row.id), row);
+      });
+    });
   }
 }

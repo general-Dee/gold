@@ -23,7 +23,7 @@ export async function uploadTradeImageAction(tradeId: string, formData: FormData
 }
 
 export async function deleteTradeImageAction(imageId: string, tradeId: string): Promise<void> {
-  const result = await deleteTradeImage(imageId);
+  const result = await deleteTradeImage(tradeId, imageId);
   if (!result) throw new Error("Image not found.");
 
   revalidatePath(`/trades/${tradeId}`);
@@ -34,7 +34,7 @@ export async function updateTradeImageCaptionAction(
   tradeId: string,
   caption: string,
 ): Promise<void> {
-  const result = await updateTradeImageCaption(imageId, caption);
+  const result = await updateTradeImageCaption(tradeId, imageId, caption);
   if (!result) throw new Error("Image not found.");
 
   revalidatePath(`/trades/${tradeId}`);

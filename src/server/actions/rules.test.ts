@@ -1,18 +1,19 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { revalidatePath } from "next/cache";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 
 // revalidatePath requires Next's request-scoped internals, which don't exist
 // in a bare vitest run — calling it unmocked throws immediately.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-// The actions under test transitively import "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so they're
-// imported dynamically inside beforeAll instead (see gamification.test.ts for
-// the failure mode this avoids).
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// The actions under test transitively import "@/server/firebase/client",
+// which binds to the emulator project as a module-load side effect. A static
+// top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so they're imported dynamically inside beforeAll.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let rulesCollection: typeof import("@/server/firebase/collections").rulesCollection;
+let setupTagsCollection: typeof import("@/server/firebase/collections").setupTagsCollection;
+let moodTagsCollection: typeof import("@/server/firebase/collections").moodTagsCollection;
 let createRuleAction: typeof import("@/server/actions/rules").createRuleAction;
 let archiveRuleAction: typeof import("@/server/actions/rules").archiveRuleAction;
 let updateRuleTextAction: typeof import("@/server/actions/rules").updateRuleTextAction;
@@ -28,7 +29,10 @@ let createSetupTag: typeof import("@/server/queries/rules").createSetupTag;
 let createMoodTag: typeof import("@/server/queries/rules").createMoodTag;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ rulesCollection, setupTagsCollection, moodTagsCollection } = await import(
+    "@/server/firebase/collections"
+  ));
   ({
     createRuleAction,
     archiveRuleAction,
@@ -45,13 +49,19 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.tradeSetupTags);
-  await db.delete(schema.rules);
-  await db.delete(schema.setupTags);
-  await db.delete(schema.moodTags);
+  await wipe();
   vi.mocked(revalidatePath).mockClear();
 });
+
+async function allRuleRows() {
+  return (await rulesCollection().get()).docs.map((d) => d.data());
+}
+async function allSetupTagRows() {
+  return (await setupTagsCollection().get()).docs.map((d) => d.data());
+}
+async function allMoodTagRows() {
+  return (await moodTagsCollection().get()).docs.map((d) => d.data());
+}
 
 function buildFormData(fields: Record<string, string>) {
   const fd = new FormData();
@@ -63,7 +73,7 @@ describe("createRuleAction", () => {
   it("creates a rule from FormData, revalidating /rules", async () => {
     await createRuleAction(buildFormData({ text: "Wait for session open" }));
 
-    const rows = await db.select().from(schema.rules);
+    const rows = await allRuleRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ text: "Wait for session open" });
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
@@ -72,7 +82,7 @@ describe("createRuleAction", () => {
   it("throws a ZodError for blank text and inserts nothing", async () => {
     await expect(createRuleAction(buildFormData({ text: "" }))).rejects.toThrow();
 
-    const rows = await db.select().from(schema.rules);
+    const rows = await allRuleRows();
     expect(rows).toEqual([]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -84,8 +94,8 @@ describe("archiveRuleAction", () => {
 
     await archiveRuleAction(rule.id);
 
-    const [row] = await db.select().from(schema.rules);
-    expect(row.isActive).toBe(false);
+    const [row] = await allRuleRows();
+    expect(row!.isActive).toBe(false);
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
   });
 });
@@ -96,8 +106,8 @@ describe("updateRuleTextAction", () => {
 
     await updateRuleTextAction(rule.id, "New text");
 
-    const [row] = await db.select().from(schema.rules);
-    expect(row.text).toBe("New text");
+    const [row] = await allRuleRows();
+    expect(row!.text).toBe("New text");
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
   });
 
@@ -106,8 +116,8 @@ describe("updateRuleTextAction", () => {
 
     await expect(updateRuleTextAction(rule.id, "")).rejects.toThrow();
 
-    const [row] = await db.select().from(schema.rules);
-    expect(row.text).toBe("Keep me");
+    const [row] = await allRuleRows();
+    expect(row!.text).toBe("Keep me");
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
@@ -120,7 +130,7 @@ describe("reorderRulesAction", () => {
 
     await reorderRulesAction([c.id, a.id, b.id]);
 
-    const rows = await db.select().from(schema.rules).orderBy(schema.rules.sortOrder);
+    const rows = (await allRuleRows()).sort((x, y) => x.sortOrder - y.sortOrder);
     expect(rows.map((r) => r.id)).toEqual([c.id, a.id, b.id]);
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
   });
@@ -130,7 +140,7 @@ describe("createSetupTagAction", () => {
   it("creates a setup tag from FormData, revalidating /rules", async () => {
     await createSetupTagAction(buildFormData({ name: "London breakout" }));
 
-    const rows = await db.select().from(schema.setupTags);
+    const rows = await allSetupTagRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ name: "London breakout" });
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
@@ -139,7 +149,7 @@ describe("createSetupTagAction", () => {
   it("throws a ZodError for a blank name and inserts nothing", async () => {
     await expect(createSetupTagAction(buildFormData({ name: "" }))).rejects.toThrow();
 
-    const rows = await db.select().from(schema.setupTags);
+    const rows = await allSetupTagRows();
     expect(rows).toEqual([]);
   });
 });
@@ -150,8 +160,8 @@ describe("archiveSetupTagAction", () => {
 
     await archiveSetupTagAction(tag.id);
 
-    const [row] = await db.select().from(schema.setupTags);
-    expect(row.isActive).toBe(false);
+    const [row] = await allSetupTagRows();
+    expect(row!.isActive).toBe(false);
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
   });
 });
@@ -165,7 +175,7 @@ describe("updateSetupTagDetailsAction", () => {
       buildFormData({ notes: "Wait for sweep", expectedR: "2.5" }),
     );
 
-    const [row] = await db.select().from(schema.setupTags);
+    const [row] = await allSetupTagRows();
     expect(row).toMatchObject({ notes: "Wait for sweep", expectedR: 2.5 });
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
     expect(revalidatePath).toHaveBeenCalledWith(`/setups/${tag.id}`);
@@ -180,7 +190,7 @@ describe("updateSetupTagDetailsAction", () => {
 
     await updateSetupTagDetailsAction(tag.id, buildFormData({ notes: "", expectedR: "" }));
 
-    const [row] = await db.select().from(schema.setupTags);
+    const [row] = await allSetupTagRows();
     expect(row).toMatchObject({ notes: null, expectedR: null });
   });
 });
@@ -189,7 +199,7 @@ describe("createMoodTagAction", () => {
   it("creates a mood tag with the given category, revalidating /rules", async () => {
     await createMoodTagAction(buildFormData({ name: "Confident", category: "before" }));
 
-    const rows = await db.select().from(schema.moodTags);
+    const rows = await allMoodTagRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ name: "Confident", category: "before" });
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
@@ -204,7 +214,7 @@ describe("createMoodTagAction", () => {
   it("throws when category is omitted from the FormData entirely", async () => {
     await expect(createMoodTagAction(buildFormData({ name: "Confident" }))).rejects.toThrow();
 
-    const rows = await db.select().from(schema.moodTags);
+    const rows = await allMoodTagRows();
     expect(rows).toEqual([]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -216,8 +226,8 @@ describe("archiveMoodTagAction", () => {
 
     await archiveMoodTagAction(tag.id);
 
-    const [row] = await db.select().from(schema.moodTags);
-    expect(row.isActive).toBe(false);
+    const [row] = await allMoodTagRows();
+    expect(row!.isActive).toBe(false);
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
   });
 });
@@ -231,7 +241,7 @@ describe("updateMoodTagDetailsAction", () => {
       buildFormData({ notes: "Tends to overtrade", expectedR: "-0.5" }),
     );
 
-    const [row] = await db.select().from(schema.moodTags);
+    const [row] = await allMoodTagRows();
     expect(row).toMatchObject({ notes: "Tends to overtrade", expectedR: -0.5 });
     expect(revalidatePath).toHaveBeenCalledWith("/rules");
     expect(revalidatePath).toHaveBeenCalledWith(`/moods/${tag.id}`);
@@ -246,7 +256,7 @@ describe("updateMoodTagDetailsAction", () => {
 
     await updateMoodTagDetailsAction(tag.id, buildFormData({ notes: "", expectedR: "" }));
 
-    const [row] = await db.select().from(schema.moodTags);
+    const [row] = await allMoodTagRows();
     expect(row).toMatchObject({ notes: null, expectedR: null });
   });
 });

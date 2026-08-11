@@ -1,18 +1,18 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { revalidatePath } from "next/cache";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 
 // revalidatePath requires Next's request-scoped internals, which don't exist
 // in a bare vitest run — calling it unmocked throws immediately.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-// The actions under test transitively import "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so they're
-// imported dynamically inside beforeAll instead (see gamification.test.ts for
-// the failure mode this avoids).
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// The actions under test transitively import "@/server/firebase/client",
+// which binds to the emulator project as a module-load side effect. A
+// static top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so they're imported dynamically inside beforeAll.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let accountSettingsCollection: typeof import("@/server/firebase/collections").accountSettingsCollection;
+let accountTransactionsCollection: typeof import("@/server/firebase/collections").accountTransactionsCollection;
 let updateAccountSettingsAction: typeof import("@/server/actions/account").updateAccountSettingsAction;
 let addAccountTransactionAction: typeof import("@/server/actions/account").addAccountTransactionAction;
 let deleteAccountTransactionAction: typeof import("@/server/actions/account").deleteAccountTransactionAction;
@@ -20,7 +20,10 @@ let seedDefaultAccountSettingsIfEmpty: typeof import("@/server/queries/account")
 let addAccountTransaction: typeof import("@/server/queries/account").addAccountTransaction;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ accountSettingsCollection, accountTransactionsCollection } = await import(
+    "@/server/firebase/collections"
+  ));
   ({ updateAccountSettingsAction, addAccountTransactionAction, deleteAccountTransactionAction } =
     await import("@/server/actions/account"));
   ({ seedDefaultAccountSettingsIfEmpty, addAccountTransaction } = await import(
@@ -29,15 +32,21 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.delete(schema.accountTransactions);
-  await db.delete(schema.accountSettings);
-  // updateAccountSettings() reads the existing settings row via
-  // getAccountSettings() and accesses its .id with no null guard — an empty
-  // table throws a plain TypeError before validation is even relevant, so
-  // every test in this file needs a pre-existing row.
+  await wipe();
+  // updateAccountSettings() reads the existing singleton doc and assumes it
+  // exists (no null guard) — an empty collection throws a plain TypeError
+  // before validation is even relevant, so every test in this file needs a
+  // pre-existing doc.
   await seedDefaultAccountSettingsIfEmpty();
   vi.mocked(revalidatePath).mockClear();
 });
+
+async function allAccountSettingsRows() {
+  return (await accountSettingsCollection().get()).docs.map((d) => d.data());
+}
+async function allTransactionRows() {
+  return (await accountTransactionsCollection().get()).docs.map((d) => d.data());
+}
 
 function buildSettingsFormData(overrides: Record<string, string> = {}) {
   const fd = new FormData();
@@ -63,7 +72,7 @@ describe("updateAccountSettingsAction", () => {
   it("parses FormData and updates settings, revalidating /account and /", async () => {
     await updateAccountSettingsAction(buildSettingsFormData());
 
-    const [row] = await db.select().from(schema.accountSettings);
+    const [row] = await allAccountSettingsRows();
     expect(row).toMatchObject({ startingBalance: 1000, monthlyProfitTargetPct: 5, maxDrawdownLimitPct: 10 });
     expect(revalidatePath).toHaveBeenCalledWith("/account");
     expect(revalidatePath).toHaveBeenCalledWith("/");
@@ -74,9 +83,9 @@ describe("updateAccountSettingsAction", () => {
       buildSettingsFormData({ monthlyProfitTargetPct: "", maxDrawdownLimitPct: "" }),
     );
 
-    const [row] = await db.select().from(schema.accountSettings);
-    expect(row.monthlyProfitTargetPct).toBeNull();
-    expect(row.maxDrawdownLimitPct).toBeNull();
+    const [row] = await allAccountSettingsRows();
+    expect(row!.monthlyProfitTargetPct).toBeNull();
+    expect(row!.maxDrawdownLimitPct).toBeNull();
   });
 });
 
@@ -84,7 +93,7 @@ describe("addAccountTransactionAction", () => {
   it("parses FormData and adds a transaction, revalidating /account and /", async () => {
     await addAccountTransactionAction(buildTransactionFormData());
 
-    const rows = await db.select().from(schema.accountTransactions);
+    const rows = await allTransactionRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ type: "deposit", amount: 500, note: "Bonus" });
     expect(revalidatePath).toHaveBeenCalledWith("/account");
@@ -94,8 +103,8 @@ describe("addAccountTransactionAction", () => {
   it("normalizes an empty note to null", async () => {
     await addAccountTransactionAction(buildTransactionFormData({ note: "" }));
 
-    const [row] = await db.select().from(schema.accountTransactions);
-    expect(row.note).toBeNull();
+    const [row] = await allTransactionRows();
+    expect(row!.note).toBeNull();
   });
 
   it("throws a ZodError for an invalid transaction type and inserts nothing", async () => {
@@ -103,7 +112,7 @@ describe("addAccountTransactionAction", () => {
       addAccountTransactionAction(buildTransactionFormData({ type: "not_a_real_type" })),
     ).rejects.toThrow();
 
-    const rows = await db.select().from(schema.accountTransactions);
+    const rows = await allTransactionRows();
     expect(rows).toEqual([]);
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -111,7 +120,7 @@ describe("addAccountTransactionAction", () => {
   it("throws for a non-positive amount", async () => {
     await expect(addAccountTransactionAction(buildTransactionFormData({ amount: "0" }))).rejects.toThrow();
 
-    const rows = await db.select().from(schema.accountTransactions);
+    const rows = await allTransactionRows();
     expect(rows).toEqual([]);
   });
 });
@@ -127,14 +136,14 @@ describe("deleteAccountTransactionAction", () => {
 
     await deleteAccountTransactionAction(txn.id);
 
-    const rows = await db.select().from(schema.accountTransactions);
+    const rows = await allTransactionRows();
     expect(rows).toEqual([]);
     expect(revalidatePath).toHaveBeenCalledWith("/account");
     expect(revalidatePath).toHaveBeenCalledWith("/");
   });
 
-  // deleteAccountTransaction is a bare .delete().where(eq(id)) with no
-  // existence guard, so a bogus id doesn't throw — it just deletes zero rows.
+  // deleteAccountTransaction is a bare doc delete with no existence guard,
+  // so a bogus id doesn't throw — it's just a no-op.
   it("is a no-op for an id that doesn't exist", async () => {
     await expect(deleteAccountTransactionAction("does-not-exist")).resolves.not.toThrow();
     expect(revalidatePath).toHaveBeenCalledWith("/account");

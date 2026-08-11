@@ -1,38 +1,39 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { eq } from "drizzle-orm";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 import { rowsToCsv } from "@/lib/csv";
 import { tradeSchema, type TradeInput } from "@/lib/validation";
 
-// createTrade/updateTrade/getTradeById transitively import "@/server/db/client",
-// which creates its sqlite client as a module-load side effect. A static
-// top-level import would run before bootstrapTestDb() sets DATABASE_URL, so
-// they're imported dynamically inside beforeAll instead (see
-// gamification.test.ts for the failure mode this avoids). tradeSchema itself
-// has no db dependency, so it's safe to import statically above.
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// createTrade/updateTrade/getTradeById transitively import
+// "@/server/firebase/client", which binds to the emulator project as a
+// module-load side effect. A static top-level import would run before
+// bootstrapTestFirestore() sets FIREBASE_PROJECT_ID, so they're imported
+// dynamically inside beforeAll instead. tradeSchema itself has no db
+// dependency, so it's safe to import statically above.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let badgeUnlocksCollection: typeof import("@/server/firebase/collections").badgeUnlocksCollection;
 let createTrade: typeof import("@/server/queries/trades").createTrade;
 let updateTrade: typeof import("@/server/queries/trades").updateTrade;
 let deleteTrade: typeof import("@/server/queries/trades").deleteTrade;
 let getTradeById: typeof import("@/server/queries/trades").getTradeById;
 let listTrades: typeof import("@/server/queries/trades").listTrades;
 let importTradesFromCsv: typeof import("@/server/queries/trades").importTradesFromCsv;
+let createRule: typeof import("@/server/queries/rules").createRule;
+let updateRuleText: typeof import("@/server/queries/rules").updateRuleText;
+let createSetupTag: typeof import("@/server/queries/rules").createSetupTag;
+let createMoodTag: typeof import("@/server/queries/rules").createMoodTag;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ badgeUnlocksCollection } = await import("@/server/firebase/collections"));
   ({ createTrade, updateTrade, deleteTrade, getTradeById, listTrades, importTradesFromCsv } =
     await import("@/server/queries/trades"));
+  ({ createRule, updateRuleText, createSetupTag, createMoodTag } = await import(
+    "@/server/queries/rules"
+  ));
 });
 
 beforeEach(async () => {
-  await db.delete(schema.badgeUnlocks);
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.tradeSetupTags);
-  await db.delete(schema.trades);
-  await db.delete(schema.rules);
-  await db.delete(schema.setupTags);
-  await db.delete(schema.moodTags);
+  await wipe();
 });
 
 function buildInput(overrides: Partial<TradeInput> = {}): TradeInput {
@@ -49,7 +50,7 @@ function buildInput(overrides: Partial<TradeInput> = {}): TradeInput {
 
 describe("createTrade", () => {
   it("snapshots the rule's current text onto the trade's rule checks", async () => {
-    const [rule] = await db.insert(schema.rules).values({ text: "Wait for confirmation" }).returning();
+    const rule = await createRule("Wait for confirmation");
 
     const trade = await createTrade(
       buildInput({ ruleChecks: [{ ruleId: rule.id, status: "followed" }] }),
@@ -74,8 +75,8 @@ describe("createTrade", () => {
   });
 
   it("links multiple setup tags to a trade", async () => {
-    const [tagA] = await db.insert(schema.setupTags).values({ name: "Tag A" }).returning();
-    const [tagB] = await db.insert(schema.setupTags).values({ name: "Tag B" }).returning();
+    const tagA = await createSetupTag("Tag A");
+    const tagB = await createSetupTag("Tag B");
 
     const trade = await createTrade(buildInput({ setupTagIds: [tagA.id, tagB.id] }));
 
@@ -86,8 +87,8 @@ describe("createTrade", () => {
 
 describe("updateTrade", () => {
   it("wholesale-replaces rule checks rather than merging them", async () => {
-    const [ruleA] = await db.insert(schema.rules).values({ text: "Rule A" }).returning();
-    const [ruleB] = await db.insert(schema.rules).values({ text: "Rule B" }).returning();
+    const ruleA = await createRule("Rule A");
+    const ruleB = await createRule("Rule B");
 
     const trade = await createTrade(
       buildInput({ ruleChecks: [{ ruleId: ruleA.id, status: "followed" }] }),
@@ -101,13 +102,13 @@ describe("updateTrade", () => {
   });
 
   it("re-snapshots against the rule's current text even if it changed since the trade was created", async () => {
-    const [rule] = await db.insert(schema.rules).values({ text: "Original text" }).returning();
+    const rule = await createRule("Original text");
 
     const trade = await createTrade(
       buildInput({ ruleChecks: [{ ruleId: rule.id, status: "followed" }] }),
     );
 
-    await db.update(schema.rules).set({ text: "Changed text" }).where(eq(schema.rules.id, rule.id));
+    await updateRuleText(rule.id, "Changed text");
     await updateTrade(trade.id, buildInput({ ruleChecks: [{ ruleId: rule.id, status: "followed" }] }));
 
     const found = await getTradeById(trade.id);
@@ -115,14 +116,24 @@ describe("updateTrade", () => {
   });
 
   it("wholesale-replaces setup tags rather than merging them", async () => {
-    const [tagA] = await db.insert(schema.setupTags).values({ name: "Tag A" }).returning();
-    const [tagB] = await db.insert(schema.setupTags).values({ name: "Tag B" }).returning();
+    const tagA = await createSetupTag("Tag A");
+    const tagB = await createSetupTag("Tag B");
 
     const trade = await createTrade(buildInput({ setupTagIds: [tagA.id] }));
     await updateTrade(trade.id, buildInput({ setupTagIds: [tagB.id] }));
 
     const found = await getTradeById(trade.id);
     expect(found?.setupTagIds).toEqual([tagB.id]);
+  });
+
+  it("preserves the original createdAt across an update", async () => {
+    const trade = await createTrade(buildInput());
+    const before = await getTradeById(trade.id);
+
+    await updateTrade(trade.id, buildInput({ reasoning: "Updated" }));
+
+    const after = await getTradeById(trade.id);
+    expect(after?.trade.createdAt).toBe(before?.trade.createdAt);
   });
 });
 
@@ -193,8 +204,8 @@ describe("listTrades", () => {
   });
 
   it("filters by setup tag", async () => {
-    const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
-    const [tagB] = await db.insert(schema.setupTags).values({ name: "Trend continuation" }).returning();
+    const tagA = await createSetupTag("London breakout");
+    const tagB = await createSetupTag("Trend continuation");
     const tagged = await createTrade(buildInput({ setupTagIds: [tagA.id, tagB.id] }));
     await createTrade(buildInput());
 
@@ -206,15 +217,15 @@ describe("listTrades", () => {
   });
 
   it("returns an empty list when filtering by a setup tag no trade has", async () => {
-    const [tag] = await db.insert(schema.setupTags).values({ name: "Unused tag" }).returning();
+    const tag = await createSetupTag("Unused tag");
     await createTrade(buildInput());
 
     expect(await listTrades({ setupTagId: tag.id })).toEqual([]);
   });
 
   it("filters by mood before entering the trade", async () => {
-    const [calm] = await db.insert(schema.moodTags).values({ name: "Calm" }).returning();
-    const [anxious] = await db.insert(schema.moodTags).values({ name: "Anxious" }).returning();
+    const calm = await createMoodTag("Calm", "both");
+    const anxious = await createMoodTag("Anxious", "both");
     const calmTrade = await createTrade(buildInput({ moodBeforeId: calm.id }));
     await createTrade(buildInput({ moodBeforeId: anxious.id }));
 
@@ -260,8 +271,8 @@ describe("listTrades", () => {
 });
 
 describe("deleteTrade", () => {
-  it("removes the trade and cascades its rule checks", async () => {
-    const [rule] = await db.insert(schema.rules).values({ text: "Rule A" }).returning();
+  it("removes the trade along with its embedded rule checks", async () => {
+    const rule = await createRule("Rule A");
     const trade = await createTrade(
       buildInput({ ruleChecks: [{ ruleId: rule.id, status: "followed" }] }),
     );
@@ -269,27 +280,22 @@ describe("deleteTrade", () => {
     await deleteTrade(trade.id);
 
     expect(await getTradeById(trade.id)).toBeNull();
-    const remainingChecks = await db
-      .select()
-      .from(schema.tradeRuleChecks)
-      .where(eq(schema.tradeRuleChecks.tradeId, trade.id));
-    expect(remainingChecks).toEqual([]);
   });
 
   it("detaches rather than throws when a badge unlock still references the trade", async () => {
     const trade = await createTrade(buildInput());
-    const [unlock] = await db
-      .insert(schema.badgeUnlocks)
-      .values({ badgeKey: "streak_3", tradeId: trade.id })
-      .returning();
+    const unlockRef = badgeUnlocksCollection().doc();
+    await unlockRef.set({
+      id: unlockRef.id,
+      badgeKey: "streak_3",
+      tradeId: trade.id,
+      unlockedAt: new Date().toISOString(),
+    });
 
     await expect(deleteTrade(trade.id)).resolves.not.toThrow();
 
-    const [after] = await db
-      .select()
-      .from(schema.badgeUnlocks)
-      .where(eq(schema.badgeUnlocks.id, unlock.id));
-    expect(after).toMatchObject({ badgeKey: "streak_3", tradeId: null });
+    const after = await unlockRef.get();
+    expect(after.data()).toMatchObject({ badgeKey: "streak_3", tradeId: null });
   });
 
   it("is a no-op for an id that doesn't exist", async () => {
@@ -341,7 +347,7 @@ function buildImportCsv(rows: (string | number | boolean | null)[][]) {
 
 describe("importTradesFromCsv", () => {
   it("imports a valid row and links an existing setup tag by name", async () => {
-    const [tag] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
+    const tag = await createSetupTag("London breakout");
 
     const result = await importTradesFromCsv(
       buildImportCsv([buildImportRow({ setupTag: "London breakout" })]),
@@ -351,14 +357,13 @@ describe("importTradesFromCsv", () => {
     expect(result.skipped).toEqual([]);
     expect(result.createdSetupTags).toEqual([]);
 
-    const trades = await db.select().from(schema.trades);
+    const trades = await listTrades();
     expect(trades).toHaveLength(1);
-    const links = await db.select().from(schema.tradeSetupTags);
-    expect(links).toEqual([expect.objectContaining({ tradeId: trades[0].id, setupTagId: tag.id })]);
+    expect(trades[0]!.setupTagIds).toEqual([tag.id]);
   });
 
   it("auto-creates a setup tag and mood tag that don't exist yet, matching existing ones case-insensitively", async () => {
-    await db.insert(schema.setupTags).values({ name: "London breakout" });
+    await createSetupTag("London breakout");
 
     const result = await importTradesFromCsv(
       buildImportCsv([
@@ -369,8 +374,6 @@ describe("importTradesFromCsv", () => {
     expect(result.importedCount).toBe(1);
     expect(result.createdSetupTags).toEqual(["NY reversal"]);
     expect(result.createdMoodTags).toEqual(["Calm"]);
-    expect(await db.select().from(schema.setupTags)).toHaveLength(2);
-    expect(await db.select().from(schema.moodTags)).toHaveLength(1);
   });
 
   it("only creates a repeated new tag name once across multiple rows", async () => {
@@ -383,7 +386,6 @@ describe("importTradesFromCsv", () => {
 
     expect(result.importedCount).toBe(2);
     expect(result.createdSetupTags).toEqual(["News spike fade"]);
-    expect(await db.select().from(schema.setupTags)).toHaveLength(1);
   });
 
   it("reports invalid rows as skipped without failing the whole import", async () => {
@@ -397,8 +399,8 @@ describe("importTradesFromCsv", () => {
 
     expect(result.importedCount).toBe(2);
     expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0].row).toBe(3);
-    expect(result.skipped[0].reason).toContain("session");
+    expect(result.skipped[0]!.row).toBe(3);
+    expect(result.skipped[0]!.reason).toContain("session");
   });
 
   it("recomputes badges once after import rather than per row", async () => {

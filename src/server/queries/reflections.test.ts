@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 
-// Every function under test transitively imports "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so everything
-// is imported dynamically inside beforeAll instead (see gamification.test.ts
-// for the failure mode this avoids).
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// Every function under test transitively imports "@/server/firebase/client",
+// which binds to the emulator project as a module-load side effect. A static
+// top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so everything is imported dynamically inside
+// beforeAll instead.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let reflectionsCollection: typeof import("@/server/firebase/collections").reflectionsCollection;
 let listReflections: typeof import("@/server/queries/reflections").listReflections;
 let getReflectionById: typeof import("@/server/queries/reflections").getReflectionById;
 let upsertReflection: typeof import("@/server/queries/reflections").upsertReflection;
@@ -15,14 +15,20 @@ let updateReflectionBody: typeof import("@/server/queries/reflections").updateRe
 let deleteReflection: typeof import("@/server/queries/reflections").deleteReflection;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ reflectionsCollection } = await import("@/server/firebase/collections"));
   ({ listReflections, getReflectionById, upsertReflection, updateReflectionBody, deleteReflection } =
     await import("@/server/queries/reflections"));
 });
 
 beforeEach(async () => {
-  await db.delete(schema.reflections);
+  await wipe();
 });
+
+async function allReflectionRows() {
+  const snapshot = await reflectionsCollection().get();
+  return snapshot.docs.map((doc) => doc.data());
+}
 
 describe("listReflections", () => {
   it("returns entries ordered by periodStart descending", async () => {
@@ -58,7 +64,7 @@ describe("getReflectionById", () => {
 describe("upsertReflection", () => {
   it("creates a new row for a new (period, periodStart)", async () => {
     await upsertReflection({ period: "weekly", periodStart: "2026-01-05", body: "First" });
-    const rows = await db.select().from(schema.reflections);
+    const rows = await allReflectionRows();
     expect(rows).toHaveLength(1);
   });
 
@@ -66,7 +72,7 @@ describe("upsertReflection", () => {
     await upsertReflection({ period: "weekly", periodStart: "2026-01-05", body: "First draft" });
     await upsertReflection({ period: "weekly", periodStart: "2026-01-05", body: "Revised draft" });
 
-    const rows = await db.select().from(schema.reflections);
+    const rows = await allReflectionRows();
     expect(rows).toHaveLength(1);
     expect(rows[0].body).toBe("Revised draft");
   });
@@ -75,7 +81,7 @@ describe("upsertReflection", () => {
     await upsertReflection({ period: "weekly", periodStart: "2026-01-01", body: "Weekly" });
     await upsertReflection({ period: "monthly", periodStart: "2026-01-01", body: "Monthly" });
 
-    const rows = await db.select().from(schema.reflections);
+    const rows = await allReflectionRows();
     expect(rows).toHaveLength(2);
   });
 });
@@ -96,6 +102,6 @@ describe("deleteReflection", () => {
     await deleteReflection(row.id);
 
     expect(await getReflectionById(row.id)).toBeNull();
-    expect(await db.select().from(schema.reflections)).toEqual([]);
+    expect(await allReflectionRows()).toEqual([]);
   });
 });

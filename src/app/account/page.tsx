@@ -213,7 +213,7 @@ export default async function AccountPage() {
         </CardHeader>
         <CardContent>
           <a href="/api/export/backup" className={buttonVariants({ variant: "outline" })}>
-            Download backup (.db)
+            Download backup (.json)
           </a>
         </CardContent>
       </Card>

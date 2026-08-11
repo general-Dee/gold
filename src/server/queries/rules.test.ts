@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 import { DEFAULT_MOOD_TAGS, DEFAULT_RULES, DEFAULT_SETUP_TAGS } from "@/lib/constants";
 
-// seedDefaultsIfEmpty transitively imports "@/server/db/client", which creates
-// its sqlite client as a module-load side effect. A static top-level import
-// would run before bootstrapTestDb() sets DATABASE_URL, so it's imported
-// dynamically inside beforeAll instead (see gamification.test.ts for the
-// failure mode this avoids).
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// seedDefaultsIfEmpty transitively imports "@/server/firebase/client", which
+// binds to the emulator project as a module-load side effect. A static
+// top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so it's imported dynamically inside beforeAll instead.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let rulesCollection: typeof import("@/server/firebase/collections").rulesCollection;
+let setupTagsCollection: typeof import("@/server/firebase/collections").setupTagsCollection;
+let moodTagsCollection: typeof import("@/server/firebase/collections").moodTagsCollection;
 let seedDefaultsIfEmpty: typeof import("@/server/queries/rules").seedDefaultsIfEmpty;
 let createSetupTag: typeof import("@/server/queries/rules").createSetupTag;
 let getSetupTagById: typeof import("@/server/queries/rules").getSetupTagById;
@@ -18,7 +19,10 @@ let getMoodTagById: typeof import("@/server/queries/rules").getMoodTagById;
 let updateMoodTagDetails: typeof import("@/server/queries/rules").updateMoodTagDetails;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ rulesCollection, setupTagsCollection, moodTagsCollection } = await import(
+    "@/server/firebase/collections"
+  ));
   ({
     seedDefaultsIfEmpty,
     createSetupTag,
@@ -31,41 +35,60 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.delete(schema.rules);
-  await db.delete(schema.setupTags);
-  await db.delete(schema.moodTags);
+  await wipe();
 });
+
+async function allRuleRows() {
+  return (await rulesCollection().get()).docs.map((d) => d.data());
+}
+async function allSetupTagRows() {
+  return (await setupTagsCollection().get()).docs.map((d) => d.data());
+}
+async function allMoodTagRows() {
+  return (await moodTagsCollection().get()).docs.map((d) => d.data());
+}
 
 describe("seedDefaultsIfEmpty", () => {
   it("seeds default rules, setup tags, and mood tags when all three tables are empty", async () => {
     await seedDefaultsIfEmpty();
 
-    expect(await db.select().from(schema.rules)).toHaveLength(DEFAULT_RULES.length);
-    expect(await db.select().from(schema.setupTags)).toHaveLength(DEFAULT_SETUP_TAGS.length);
-    expect(await db.select().from(schema.moodTags)).toHaveLength(DEFAULT_MOOD_TAGS.length);
+    expect(await allRuleRows()).toHaveLength(DEFAULT_RULES.length);
+    expect(await allSetupTagRows()).toHaveLength(DEFAULT_SETUP_TAGS.length);
+    expect(await allMoodTagRows()).toHaveLength(DEFAULT_MOOD_TAGS.length);
   });
 
   it("never overwrites existing rows in a table, even when the other two tables are empty", async () => {
-    await db.insert(schema.rules).values({ text: "My custom rule" });
+    const now = new Date().toISOString();
+    await rulesCollection()
+      .doc("custom-rule")
+      .set({
+        id: "custom-rule",
+        text: "My custom rule",
+        sortOrder: 0,
+        isActive: true,
+        archivedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
 
     await seedDefaultsIfEmpty();
 
-    const rules = await db.select().from(schema.rules);
+    const rules = await allRuleRows();
     expect(rules).toHaveLength(1);
-    expect(rules[0].text).toBe("My custom rule");
+    expect(rules[0]!.text).toBe("My custom rule");
 
     // The other two tables were empty, so they still get seeded independently.
-    expect(await db.select().from(schema.setupTags)).toHaveLength(DEFAULT_SETUP_TAGS.length);
-    expect(await db.select().from(schema.moodTags)).toHaveLength(DEFAULT_MOOD_TAGS.length);
+    expect(await allSetupTagRows()).toHaveLength(DEFAULT_SETUP_TAGS.length);
+    expect(await allMoodTagRows()).toHaveLength(DEFAULT_MOOD_TAGS.length);
   });
 
   it("is a no-op on a second call once everything is seeded", async () => {
     await seedDefaultsIfEmpty();
     await seedDefaultsIfEmpty();
 
-    expect(await db.select().from(schema.rules)).toHaveLength(DEFAULT_RULES.length);
-    expect(await db.select().from(schema.setupTags)).toHaveLength(DEFAULT_SETUP_TAGS.length);
-    expect(await db.select().from(schema.moodTags)).toHaveLength(DEFAULT_MOOD_TAGS.length);
+    expect(await allRuleRows()).toHaveLength(DEFAULT_RULES.length);
+    expect(await allSetupTagRows()).toHaveLength(DEFAULT_SETUP_TAGS.length);
+    expect(await allMoodTagRows()).toHaveLength(DEFAULT_MOOD_TAGS.length);
   });
 });
 

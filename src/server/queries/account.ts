@@ -1,56 +1,77 @@
-import { desc, eq } from "drizzle-orm";
-import { db } from "@/server/db/client";
-import { accountSettings, accountTransactions } from "@/server/db/schema";
+import {
+  ACCOUNT_SETTINGS_SINGLETON_ID,
+  accountSettingsCollection,
+  accountTransactionsCollection,
+  type AccountSettings,
+  type AccountTransaction,
+} from "@/server/firebase/collections";
+import { nanoid } from "@/server/firebase/ids";
 import { listTrades } from "@/server/queries/trades";
 import type { AccountSettingsInput, AccountTransactionInput } from "@/lib/validation";
 
+// Doesn't assume the root layout's seedDefaultAccountSettingsIfEmpty() has already run —
+// Next.js explicitly parallelizes layout and page data-fetching, so a page calling this
+// can race ahead of the layout's seed write. Self-heals instead of asserting non-null.
 export async function getAccountSettings() {
-  const [row] = await db.select().from(accountSettings).limit(1);
-  return row;
+  const ref = accountSettingsCollection().doc(ACCOUNT_SETTINGS_SINGLETON_ID);
+  const doc = await ref.get();
+  if (doc.exists) return doc.data()!;
+  await seedDefaultAccountSettingsIfEmpty();
+  return (await ref.get()).data()!;
 }
 
-export async function updateAccountSettings(input: AccountSettingsInput) {
-  const settings = await getAccountSettings();
-  const [row] = await db
-    .update(accountSettings)
-    .set({
-      startingBalance: input.startingBalance,
-      monthlyProfitTargetPct: input.monthlyProfitTargetPct ?? null,
-      maxDrawdownLimitPct: input.maxDrawdownLimitPct ?? null,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(accountSettings.id, settings.id))
-    .returning();
+export async function updateAccountSettings(input: AccountSettingsInput): Promise<AccountSettings> {
+  const ref = accountSettingsCollection().doc(ACCOUNT_SETTINGS_SINGLETON_ID);
+  const existing = (await ref.get()).data()!;
+  const row: AccountSettings = {
+    ...existing,
+    startingBalance: input.startingBalance,
+    monthlyProfitTargetPct: input.monthlyProfitTargetPct ?? null,
+    maxDrawdownLimitPct: input.maxDrawdownLimitPct ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+  await ref.set(row);
   return row;
 }
 
 /** Seeds a single zeroed settings row on first run only — never overwrites existing data. */
 export async function seedDefaultAccountSettingsIfEmpty() {
-  const existing = await db.select().from(accountSettings).limit(1);
-  if (existing.length === 0) {
-    await db.insert(accountSettings).values({});
+  const ref = accountSettingsCollection().doc(ACCOUNT_SETTINGS_SINGLETON_ID);
+  const existing = await ref.get();
+  if (!existing.exists) {
+    const now = new Date().toISOString();
+    const row: AccountSettings = {
+      id: ACCOUNT_SETTINGS_SINGLETON_ID,
+      startingBalance: 0,
+      monthlyProfitTargetPct: null,
+      maxDrawdownLimitPct: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await ref.set(row);
   }
 }
 
 export async function listAccountTransactions() {
-  return db.select().from(accountTransactions).orderBy(desc(accountTransactions.occurredAt));
+  const snapshot = await accountTransactionsCollection().orderBy("occurredAt", "desc").get();
+  return snapshot.docs.map((doc) => doc.data());
 }
 
-export async function addAccountTransaction(input: AccountTransactionInput) {
-  const [row] = await db
-    .insert(accountTransactions)
-    .values({
-      type: input.type,
-      amount: input.amount,
-      occurredAt: input.occurredAt,
-      note: input.note ?? null,
-    })
-    .returning();
+export async function addAccountTransaction(input: AccountTransactionInput): Promise<AccountTransaction> {
+  const row: AccountTransaction = {
+    id: nanoid(),
+    type: input.type,
+    amount: input.amount,
+    occurredAt: input.occurredAt,
+    note: input.note ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  await accountTransactionsCollection().doc(row.id).set(row);
   return row;
 }
 
 export async function deleteAccountTransaction(id: string) {
-  await db.delete(accountTransactions).where(eq(accountTransactions.id, id));
+  await accountTransactionsCollection().doc(id).delete();
 }
 
 export type BalancePoint = { at: string; balance: number; kind: "trade" | "deposit" | "withdrawal" };
@@ -83,7 +104,7 @@ export async function getAccountEquityCurve(): Promise<BalancePoint[]> {
 
 export async function getCurrentBalance(): Promise<number> {
   const curve = await getAccountEquityCurve();
-  if (curve.length > 0) return curve[curve.length - 1].balance;
+  if (curve.length > 0) return curve[curve.length - 1]!.balance;
   const settings = await getAccountSettings();
   return settings.startingBalance;
 }
@@ -100,14 +121,14 @@ export type GoalProgress = {
 export async function getGoalProgress(): Promise<GoalProgress> {
   const settings = await getAccountSettings();
   const curve = await getAccountEquityCurve();
-  const currentBalance = curve.length > 0 ? curve[curve.length - 1].balance : settings.startingBalance;
+  const currentBalance = curve.length > 0 ? curve[curve.length - 1]!.balance : settings.startingBalance;
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const pointsBeforeMonth = curve.filter((p) => p.at < monthStart);
   const balanceAtMonthStart =
     pointsBeforeMonth.length > 0
-      ? pointsBeforeMonth[pointsBeforeMonth.length - 1].balance
+      ? pointsBeforeMonth[pointsBeforeMonth.length - 1]!.balance
       : settings.startingBalance;
   const monthToDateProfitPct =
     balanceAtMonthStart !== 0 ? ((currentBalance - balanceAtMonthStart) / balanceAtMonthStart) * 100 : null;

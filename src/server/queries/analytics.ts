@@ -1,14 +1,11 @@
-import { and, asc, eq, gte, lt } from "drizzle-orm";
-import { db } from "@/server/db/client";
-import { tradeSetupTags, trades } from "@/server/db/schema";
+import { tradesCollection, type Trade } from "@/server/firebase/collections";
 import { localDateKey } from "@/lib/dates";
 import { listActiveMoodTags, listActiveSetupTags } from "@/server/queries/rules";
 import { getTradeAdherenceHistory } from "./gamification";
 
-type Trade = typeof trades.$inferSelect;
-
-async function closedTrades() {
-  return db.select().from(trades).where(eq(trades.status, "closed")).orderBy(asc(trades.entryAt));
+async function closedTrades(): Promise<Trade[]> {
+  const snapshot = await tradesCollection().orderBy("entryAt", "asc").get();
+  return snapshot.docs.map((doc) => doc.data()).filter((t) => t.status === "closed");
 }
 
 export type GroupStats = {
@@ -53,22 +50,18 @@ async function breakdownBy(
 
 // A trade can carry more than one setup tag, so this can't use the generic
 // breakdownBy helper (which assumes one bucket per trade) — a trade with two
-// tags should land in both of their buckets.
+// tags should land in both of their buckets. setupTagIds live directly on
+// the trade doc, so this no longer needs a separate junction-collection read.
 export async function getBreakdownBySetupTag(): Promise<BreakdownGroup[]> {
-  const [allTrades, tags, links] = await Promise.all([
-    closedTrades(),
-    listActiveSetupTags(),
-    db.select().from(tradeSetupTags),
-  ]);
+  const [allTrades, tags] = await Promise.all([closedTrades(), listActiveSetupTags()]);
   const nameById = new Map(tags.map((t) => [t.id, t.name]));
-  const tradeById = new Map(allTrades.map((t) => [t.id, t]));
 
   const buckets = new Map<string, Trade[]>();
-  for (const link of links) {
-    const trade = tradeById.get(link.tradeId);
-    if (!trade) continue;
-    if (!buckets.has(link.setupTagId)) buckets.set(link.setupTagId, []);
-    buckets.get(link.setupTagId)!.push(trade);
+  for (const trade of allTrades) {
+    for (const tagId of trade.setupTagIds) {
+      if (!buckets.has(tagId)) buckets.set(tagId, []);
+      buckets.get(tagId)!.push(trade);
+    }
   }
 
   return [...buckets.entries()]
@@ -254,16 +247,11 @@ export async function getDailyPnlForMonth(year: number, month: number): Promise<
   const start = new Date(year, month - 1, 1);
   const end = new Date(year, month, 1);
 
-  const monthTrades = await db
-    .select()
-    .from(trades)
-    .where(
-      and(
-        gte(trades.entryAt, start.toISOString()),
-        lt(trades.entryAt, end.toISOString()),
-        eq(trades.status, "closed"),
-      ),
-    );
+  const all = await closedTrades();
+  const monthTrades = all.filter((t) => {
+    const entry = new Date(t.entryAt);
+    return entry >= start && entry < end;
+  });
 
   const byDate = new Map<string, Trade[]>();
   for (const t of monthTrades) {

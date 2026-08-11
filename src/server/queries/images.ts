@@ -1,34 +1,38 @@
 import { unlink, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
-import { db } from "@/server/db/client";
-import { tradeImages } from "@/server/db/schema";
+import { tradeImagesCollection, type TradeImage } from "@/server/firebase/collections";
+import { nanoid } from "@/server/firebase/ids";
 import { UPLOADS_DIR } from "@/server/uploadsDir";
 
 export async function saveTradeImage(
   tradeId: string,
   file: { fileName: string; buffer: Buffer },
   caption: string | null,
-) {
+): Promise<TradeImage> {
   await mkdir(UPLOADS_DIR, { recursive: true });
 
   const ext = path.extname(file.fileName) || "";
   const filePath = `${nanoid()}${ext}`;
   await writeFile(path.join(UPLOADS_DIR, filePath), file.buffer);
 
-  const [row] = await db
-    .insert(tradeImages)
-    .values({ tradeId, filePath, caption })
-    .returning();
+  const row: TradeImage = { id: nanoid(), filePath, caption, createdAt: new Date().toISOString() };
+  await tradeImagesCollection(tradeId).doc(row.id).set(row);
   return row;
 }
 
-export async function deleteTradeImage(imageId: string): Promise<{ tradeId: string } | null> {
-  const [image] = await db.select().from(tradeImages).where(eq(tradeImages.id, imageId));
-  if (!image) return null;
+// tradeId is required to address the images subcollection (trades/{id}/images)
+// directly — callers (the images actions) already have it in scope from the
+// page they're called from, so this avoids an all-trades scan to locate it.
+export async function deleteTradeImage(
+  tradeId: string,
+  imageId: string,
+): Promise<{ tradeId: string } | null> {
+  const ref = tradeImagesCollection(tradeId).doc(imageId);
+  const doc = await ref.get();
+  if (!doc.exists) return null;
+  const image = doc.data()!;
 
-  await db.delete(tradeImages).where(eq(tradeImages.id, imageId));
+  await ref.delete();
 
   try {
     await unlink(path.join(UPLOADS_DIR, image.filePath));
@@ -36,18 +40,19 @@ export async function deleteTradeImage(imageId: string): Promise<{ tradeId: stri
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
 
-  return { tradeId: image.tradeId };
+  return { tradeId };
 }
 
 export async function updateTradeImageCaption(
+  tradeId: string,
   imageId: string,
   caption: string | null,
 ): Promise<{ tradeId: string; caption: string | null } | null> {
-  const [row] = await db
-    .update(tradeImages)
-    .set({ caption: caption?.trim() || null })
-    .where(eq(tradeImages.id, imageId))
-    .returning();
-  if (!row) return null;
-  return { tradeId: row.tradeId, caption: row.caption };
+  const ref = tradeImagesCollection(tradeId).doc(imageId);
+  const doc = await ref.get();
+  if (!doc.exists) return null;
+
+  const trimmedCaption = caption?.trim() || null;
+  await ref.update({ caption: trimmedCaption });
+  return { tradeId, caption: trimmedCaption };
 }

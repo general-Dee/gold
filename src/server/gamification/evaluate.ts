@@ -1,5 +1,6 @@
-import { db } from "@/server/db/client";
-import { badgeUnlocks } from "@/server/db/schema";
+import { nanoid } from "@/server/firebase/ids";
+import { runBatch } from "@/server/firebase/batch";
+import { badgeUnlocksCollection, type BadgeUnlock } from "@/server/firebase/collections";
 import {
   computeStreaks,
   getTradeAdherenceHistory,
@@ -33,7 +34,7 @@ export async function evaluateBadgesForTrade(tradeId: string) {
   const history = await getTradeAdherenceHistory();
   const { streakAtTrade } = computeStreaks(history);
 
-  const existing = await db.select().from(badgeUnlocks);
+  const existing = (await badgeUnlocksCollection().get()).docs.map((doc) => doc.data());
   const existingByKey = new Map<string, typeof existing>();
   for (const u of existing) {
     const list = existingByKey.get(u.badgeKey) ?? [];
@@ -137,7 +138,13 @@ export async function evaluateBadgesForTrade(tradeId: string) {
   }
 
   if (toInsert.length > 0) {
-    await db.insert(badgeUnlocks).values(toInsert);
+    const now = new Date().toISOString();
+    await runBatch((batch) => {
+      for (const u of toInsert) {
+        const row: BadgeUnlock = { id: nanoid(), badgeKey: u.badgeKey, tradeId: u.tradeId, unlockedAt: now };
+        batch.set(badgeUnlocksCollection().doc(row.id), row);
+      }
+    });
   }
 
   return toInsert.filter((u) => u.tradeId === tradeId);

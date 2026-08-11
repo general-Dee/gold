@@ -1,24 +1,29 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
+import { tradeSchema } from "@/lib/validation";
 
-// Every app module under test here transitively imports "@/server/db/client",
-// which creates its sqlite client as a module-load side effect. A static
-// top-level import would run before bootstrapTestDb() sets DATABASE_URL, so
-// everything is imported dynamically inside beforeAll instead.
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// Every app module under test here transitively imports
+// "@/server/firebase/client", which binds to the emulator project as a
+// module-load side effect. A static top-level import would run before
+// bootstrapTestFirestore() sets FIREBASE_PROJECT_ID, so everything is
+// imported dynamically inside beforeAll instead. tradeSchema itself has no
+// db dependency, so it's safe to import statically above.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
 let computeStreaks: typeof import("@/server/queries/gamification").computeStreaks;
 let getTradeAdherenceHistory: typeof import("@/server/queries/gamification").getTradeAdherenceHistory;
 let getMonthlyAverageAdherence: typeof import("@/server/queries/gamification").getMonthlyAverageAdherence;
 let getMostRecentTradeViolations: typeof import("@/server/queries/gamification").getMostRecentTradeViolations;
 let computeOutcomeStreaks: typeof import("@/server/queries/gamification").computeOutcomeStreaks;
 let getTradeOutcomeHistory: typeof import("@/server/queries/gamification").getTradeOutcomeHistory;
+let createRule: typeof import("@/server/queries/rules").createRule;
+let createTrade: typeof import("@/server/queries/trades").createTrade;
 
 type TradeAdherence = Awaited<ReturnType<typeof getTradeAdherenceHistory>>[number];
 type TradeOutcomePoint = Awaited<ReturnType<typeof getTradeOutcomeHistory>>[number];
+type CheckStatus = "followed" | "not_followed" | "not_applicable";
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
   ({
     computeStreaks,
     getTradeAdherenceHistory,
@@ -27,6 +32,8 @@ beforeAll(async () => {
     computeOutcomeStreaks,
     getTradeOutcomeHistory,
   } = await import("@/server/queries/gamification"));
+  ({ createRule } = await import("@/server/queries/rules"));
+  ({ createTrade } = await import("@/server/queries/trades"));
 });
 
 const makeAdherence = (isAdherent: boolean): TradeAdherence => ({
@@ -145,12 +152,9 @@ describe("db-backed gamification queries", () => {
   let ruleBId: string;
 
   beforeEach(async () => {
-    await db.delete(schema.tradeRuleChecks);
-    await db.delete(schema.trades);
-    await db.delete(schema.rules);
-
-    const [ruleA] = await db.insert(schema.rules).values({ text: "Rule A" }).returning();
-    const [ruleB] = await db.insert(schema.rules).values({ text: "Rule B" }).returning();
+    await wipe();
+    const ruleA = await createRule("Rule A");
+    const ruleB = await createRule("Rule B");
     ruleAId = ruleA.id;
     ruleBId = ruleB.id;
   });
@@ -159,10 +163,10 @@ describe("db-backed gamification queries", () => {
     entryAt: string,
     outcome: "win" | "loss" | "breakeven" | null = null,
     status: "open" | "closed" = "closed",
+    ruleChecks: { ruleId: string; status: CheckStatus }[] = [],
   ) {
-    const [trade] = await db
-      .insert(schema.trades)
-      .values({
+    return createTrade(
+      tradeSchema.parse({
         direction: "long",
         entryPrice: 100,
         stopLoss: 95,
@@ -171,23 +175,9 @@ describe("db-backed gamification queries", () => {
         entryAt,
         outcome,
         status,
-      })
-      .returning();
-    return trade;
-  }
-
-  async function addCheck(
-    tradeId: string,
-    ruleId: string,
-    status: "followed" | "not_followed" | "not_applicable",
-    ruleTextSnapshot = "snapshot",
-  ) {
-    await db.insert(schema.tradeRuleChecks).values({
-      tradeId,
-      ruleId,
-      ruleTextSnapshot,
-      status,
-    });
+        ruleChecks,
+      }),
+    );
   }
 
   describe("getTradeAdherenceHistory", () => {
@@ -205,12 +195,14 @@ describe("db-backed gamification queries", () => {
     });
 
     it("computes a full adherence ratio when every checked rule was followed", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(t.id, ruleAId, "followed");
-      await addCheck(t.id, ruleBId, "followed");
+      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+        { ruleId: ruleBId, status: "followed" },
+      ]);
 
       const [entry] = await getTradeAdherenceHistory();
       expect(entry).toMatchObject({
+        tradeId: t.id,
         followed: 2,
         notFollowed: 0,
         notApplicable: 0,
@@ -220,9 +212,10 @@ describe("db-backed gamification queries", () => {
     });
 
     it("excludes not_applicable checks from the adherence ratio denominator", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(t.id, ruleAId, "followed");
-      await addCheck(t.id, ruleBId, "not_applicable");
+      await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+        { ruleId: ruleBId, status: "not_applicable" },
+      ]);
 
       const [entry] = await getTradeAdherenceHistory();
       expect(entry).toMatchObject({
@@ -235,9 +228,10 @@ describe("db-backed gamification queries", () => {
     });
 
     it("marks a trade with any broken rule as not adherent and lowers its ratio", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(t.id, ruleAId, "followed");
-      await addCheck(t.id, ruleBId, "not_followed");
+      await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+        { ruleId: ruleBId, status: "not_followed" },
+      ]);
 
       const [entry] = await getTradeAdherenceHistory();
       expect(entry).toMatchObject({
@@ -256,8 +250,9 @@ describe("db-backed gamification queries", () => {
     });
 
     it("still includes open trades — adherence is knowable at entry, before the trade closes", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "open");
-      await addCheck(t.id, ruleAId, "not_followed");
+      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "open", [
+        { ruleId: ruleAId, status: "not_followed" },
+      ]);
 
       const [entry] = await getTradeAdherenceHistory();
       expect(entry).toMatchObject({ tradeId: t.id, isAdherent: false });
@@ -292,15 +287,16 @@ describe("db-backed gamification queries", () => {
     });
 
     it("averages adherence ratios only across trades within the given month", async () => {
-      const jan1 = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(jan1.id, ruleAId, "followed");
-
-      const jan2 = await addTrade("2026-01-15T10:00:00.000Z");
-      await addCheck(jan2.id, ruleAId, "followed");
-      await addCheck(jan2.id, ruleBId, "not_followed");
-
-      const feb = await addTrade("2026-02-01T10:00:00.000Z");
-      await addCheck(feb.id, ruleAId, "not_followed");
+      await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+      ]);
+      await addTrade("2026-01-15T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+        { ruleId: ruleBId, status: "not_followed" },
+      ]);
+      await addTrade("2026-02-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "not_followed" },
+      ]);
 
       expect(await getMonthlyAverageAdherence("2026-01")).toBeCloseTo(0.75);
       expect(await getMonthlyAverageAdherence("2026-02")).toBeCloseTo(0);
@@ -313,46 +309,51 @@ describe("db-backed gamification queries", () => {
     });
 
     it("returns null when the most recent trade has no broken rules", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(t.id, ruleAId, "followed");
+      await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+      ]);
       expect(await getMostRecentTradeViolations()).toBeNull();
     });
 
     it("returns the broken rules' text for the most recent trade", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(t.id, ruleAId, "not_followed", "Max 2 trades today");
-      await addCheck(t.id, ruleBId, "followed", "Checked DXY correlation");
+      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "not_followed" },
+        { ruleId: ruleBId, status: "followed" },
+      ]);
 
       const result = await getMostRecentTradeViolations();
       expect(result).toEqual({
         tradeId: t.id,
         entryAt: t.entryAt,
-        violatedRules: ["Max 2 trades today"],
+        violatedRules: ["Rule A"],
       });
     });
 
     it("looks at the most recent trade by entryAt, not the last-inserted row", async () => {
       // Inserted first, but chronologically the most recent trade — clean.
-      const chronologicallyLatest = await addTrade("2026-01-20T10:00:00.000Z");
-      await addCheck(chronologicallyLatest.id, ruleAId, "followed");
+      await addTrade("2026-01-20T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "followed" },
+      ]);
 
       // Inserted last (would win under "last inserted row" logic), but its
       // entryAt is earlier — should NOT surface even though it has a violation.
-      const insertedLast = await addTrade("2026-01-01T10:00:00.000Z");
-      await addCheck(insertedLast.id, ruleAId, "not_followed", "Should not surface");
+      await addTrade("2026-01-01T10:00:00.000Z", null, "closed", [
+        { ruleId: ruleAId, status: "not_followed" },
+      ]);
 
       expect(await getMostRecentTradeViolations()).toBeNull();
     });
 
     it("surfaces a violation on the most recent trade even while it's still open", async () => {
-      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "open");
-      await addCheck(t.id, ruleAId, "not_followed", "Max 2 trades today");
+      const t = await addTrade("2026-01-01T10:00:00.000Z", null, "open", [
+        { ruleId: ruleAId, status: "not_followed" },
+      ]);
 
       const result = await getMostRecentTradeViolations();
       expect(result).toEqual({
         tradeId: t.id,
         entryAt: t.entryAt,
-        violatedRules: ["Max 2 trades today"],
+        violatedRules: ["Rule A"],
       });
     });
   });

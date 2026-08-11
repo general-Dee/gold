@@ -1,32 +1,35 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
+import { tradeSchema, type TradeInput } from "@/lib/validation";
 
-// Every function under test transitively imports "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so everything
-// is imported dynamically inside beforeAll instead (see gamification.test.ts
-// for the failure mode this avoids).
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// Every function under test transitively imports "@/server/firebase/client",
+// which binds to the emulator project as a module-load side effect. A
+// static top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so everything is imported dynamically inside
+// beforeAll instead.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
 let analytics: typeof import("@/server/queries/analytics");
+let createRule: typeof import("@/server/queries/rules").createRule;
+let createSetupTag: typeof import("@/server/queries/rules").createSetupTag;
+let createMoodTag: typeof import("@/server/queries/rules").createMoodTag;
+let createTrade: typeof import("@/server/queries/trades").createTrade;
+let tradesCollection: typeof import("@/server/firebase/collections").tradesCollection;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
   analytics = await import("@/server/queries/analytics");
+  ({ createRule, createSetupTag, createMoodTag } = await import("@/server/queries/rules"));
+  ({ createTrade } = await import("@/server/queries/trades"));
+  ({ tradesCollection } = await import("@/server/firebase/collections"));
 });
 
 let ruleAId: string;
 let ruleBId: string;
 
 beforeEach(async () => {
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.trades);
-  await db.delete(schema.rules);
-  await db.delete(schema.setupTags);
-  await db.delete(schema.moodTags);
-
-  const [ruleA] = await db.insert(schema.rules).values({ text: "Rule A" }).returning();
-  const [ruleB] = await db.insert(schema.rules).values({ text: "Rule B" }).returning();
+  await wipe();
+  const ruleA = await createRule("Rule A");
+  const ruleB = await createRule("Rule B");
   ruleAId = ruleA.id;
   ruleBId = ruleB.id;
 });
@@ -43,12 +46,12 @@ type TradeOverrides = {
   status?: "open" | "closed";
   dxyBias?: "up" | "down" | "flat" | null;
   newsNearby?: boolean;
+  ruleChecks?: TradeInput["ruleChecks"];
 };
 
 async function addTrade(opts: TradeOverrides) {
-  const [trade] = await db
-    .insert(schema.trades)
-    .values({
+  const trade = await createTrade(
+    tradeSchema.parse({
       direction: "long",
       entryPrice: 100,
       stopLoss: 95,
@@ -63,29 +66,25 @@ async function addTrade(opts: TradeOverrides) {
       moodBeforeId: opts.moodBeforeId ?? null,
       dxyBias: opts.dxyBias ?? null,
       newsNearby: opts.newsNearby ?? false,
-    })
-    .returning();
+      setupTagIds: opts.setupTagIds ?? [],
+      ruleChecks: opts.ruleChecks ?? [],
+    }),
+  );
 
-  if (opts.setupTagIds && opts.setupTagIds.length > 0) {
-    await db
-      .insert(schema.tradeSetupTags)
-      .values(opts.setupTagIds.map((setupTagId) => ({ tradeId: trade.id, setupTagId })));
+  // createTrade() always recomputes riskReward{Planned,Realized} from
+  // entryPrice/stopLoss/exitPrice (unchanged from the pre-migration Drizzle
+  // behavior) — these fixtures fabricate R-multiples directly to test
+  // aggregation math in isolation from price data, so patch them onto the
+  // doc afterward rather than deriving realistic prices for every case.
+  if (opts.riskRewardPlanned !== undefined || opts.riskRewardRealized !== undefined) {
+    const patch: Partial<{ riskRewardPlanned: number | null; riskRewardRealized: number | null }> = {};
+    if (opts.riskRewardPlanned !== undefined) patch.riskRewardPlanned = opts.riskRewardPlanned;
+    if (opts.riskRewardRealized !== undefined) patch.riskRewardRealized = opts.riskRewardRealized;
+    await tradesCollection().doc(trade.id).update(patch);
+    return { ...trade, ...patch };
   }
 
   return trade;
-}
-
-async function addCheck(
-  tradeId: string,
-  ruleId: string,
-  status: "followed" | "not_followed" | "not_applicable",
-) {
-  await db.insert(schema.tradeRuleChecks).values({
-    tradeId,
-    ruleId,
-    ruleTextSnapshot: "snapshot",
-    status,
-  });
 }
 
 function daysAgo(n: number) {
@@ -171,17 +170,25 @@ describe("get30DayAdherence", () => {
   });
 
   it("excludes trades older than 30 days and trades with no checklist coverage", async () => {
-    const old = await addTrade({ entryAt: daysAgo(40) });
-    await addCheck(old.id, ruleAId, "followed");
+    await addTrade({
+      entryAt: daysAgo(40),
+      ruleChecks: [{ ruleId: ruleAId, status: "followed" }],
+    });
 
     await addTrade({ entryAt: daysAgo(2) });
 
-    const recentFull = await addTrade({ entryAt: daysAgo(10) });
-    await addCheck(recentFull.id, ruleAId, "followed");
+    await addTrade({
+      entryAt: daysAgo(10),
+      ruleChecks: [{ ruleId: ruleAId, status: "followed" }],
+    });
 
-    const recentHalf = await addTrade({ entryAt: daysAgo(5) });
-    await addCheck(recentHalf.id, ruleAId, "followed");
-    await addCheck(recentHalf.id, ruleBId, "not_followed");
+    await addTrade({
+      entryAt: daysAgo(5),
+      ruleChecks: [
+        { ruleId: ruleAId, status: "followed" },
+        { ruleId: ruleBId, status: "not_followed" },
+      ],
+    });
 
     expect(await analytics.get30DayAdherence()).toBeCloseTo(0.75);
   });
@@ -189,15 +196,31 @@ describe("get30DayAdherence", () => {
 
 describe("getAdherenceCorrelation", () => {
   it("summarizes win rate and average R separately for adherent vs non-adherent trades", async () => {
-    const a1 = await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2 });
-    await addCheck(a1.id, ruleAId, "followed");
-    const a2 = await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1 });
-    await addCheck(a2.id, ruleAId, "followed");
+    await addTrade({
+      entryAt: "2026-01-01T10:00:00.000Z",
+      outcome: "win",
+      riskRewardRealized: 2,
+      ruleChecks: [{ ruleId: ruleAId, status: "followed" }],
+    });
+    await addTrade({
+      entryAt: "2026-01-02T10:00:00.000Z",
+      outcome: "loss",
+      riskRewardRealized: -1,
+      ruleChecks: [{ ruleId: ruleAId, status: "followed" }],
+    });
 
-    const b1 = await addTrade({ entryAt: "2026-01-03T10:00:00.000Z", outcome: "win", riskRewardRealized: 1 });
-    await addCheck(b1.id, ruleAId, "not_followed");
-    const b2 = await addTrade({ entryAt: "2026-01-04T10:00:00.000Z", outcome: null, riskRewardRealized: 0.5 });
-    await addCheck(b2.id, ruleAId, "not_followed");
+    await addTrade({
+      entryAt: "2026-01-03T10:00:00.000Z",
+      outcome: "win",
+      riskRewardRealized: 1,
+      ruleChecks: [{ ruleId: ruleAId, status: "not_followed" }],
+    });
+    await addTrade({
+      entryAt: "2026-01-04T10:00:00.000Z",
+      outcome: null,
+      riskRewardRealized: 0.5,
+      ruleChecks: [{ ruleId: ruleAId, status: "not_followed" }],
+    });
 
     const result = await analytics.getAdherenceCorrelation();
 
@@ -206,8 +229,12 @@ describe("getAdherenceCorrelation", () => {
   });
 
   it("returns a null winRate and avgR for an empty group instead of dividing by zero", async () => {
-    const a1 = await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2 });
-    await addCheck(a1.id, ruleAId, "followed");
+    await addTrade({
+      entryAt: "2026-01-01T10:00:00.000Z",
+      outcome: "win",
+      riskRewardRealized: 2,
+      ruleChecks: [{ ruleId: ruleAId, status: "followed" }],
+    });
 
     const result = await analytics.getAdherenceCorrelation();
 
@@ -217,8 +244,8 @@ describe("getAdherenceCorrelation", () => {
 
 describe("getBreakdownBySetupTag", () => {
   it("groups by setup tag, sorted by trade count, and excludes untagged trades", async () => {
-    const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
-    const [tagB] = await db.insert(schema.setupTags).values({ name: "NY reversal" }).returning();
+    const tagA = await createSetupTag("London breakout");
+    const tagB = await createSetupTag("NY reversal");
 
     await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 2, pnl: 200, setupTagIds: [tagA.id] });
     await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, pnl: -100, setupTagIds: [tagA.id] });
@@ -234,8 +261,8 @@ describe("getBreakdownBySetupTag", () => {
   });
 
   it("counts a trade with multiple tags under every one of its tags", async () => {
-    const [tagA] = await db.insert(schema.setupTags).values({ name: "London breakout" }).returning();
-    const [tagB] = await db.insert(schema.setupTags).values({ name: "Trend continuation" }).returning();
+    const tagA = await createSetupTag("London breakout");
+    const tagB = await createSetupTag("Trend continuation");
 
     await addTrade({
       entryAt: "2026-01-01T10:00:00.000Z",
@@ -291,8 +318,8 @@ describe("getBreakdownBySession", () => {
 
 describe("getBreakdownByMoodBefore", () => {
   it("groups trades by mood-before tag and excludes trades with no mood set", async () => {
-    const [calm] = await db.insert(schema.moodTags).values({ name: "Calm", category: "before" }).returning();
-    const [fomo] = await db.insert(schema.moodTags).values({ name: "FOMO", category: "before" }).returning();
+    const calm = await createMoodTag("Calm", "before");
+    const fomo = await createMoodTag("FOMO", "before");
 
     await addTrade({ entryAt: "2026-01-01T10:00:00.000Z", outcome: "win", riskRewardRealized: 1, moodBeforeId: calm.id });
     await addTrade({ entryAt: "2026-01-02T10:00:00.000Z", outcome: "loss", riskRewardRealized: -1, moodBeforeId: fomo.id });

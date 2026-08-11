@@ -1,24 +1,27 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
+import { tradeSchema } from "@/lib/validation";
 
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let badgeUnlocksCollection: typeof import("@/server/firebase/collections").badgeUnlocksCollection;
+let tradesCollection: typeof import("@/server/firebase/collections").tradesCollection;
 let evaluateBadgesForTrade: typeof import("./evaluate").evaluateBadgesForTrade;
+let createRule: typeof import("@/server/queries/rules").createRule;
+let createTrade: typeof import("@/server/queries/trades").createTrade;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ badgeUnlocksCollection, tradesCollection } = await import("@/server/firebase/collections"));
   ({ evaluateBadgesForTrade } = await import("./evaluate"));
+  ({ createRule } = await import("@/server/queries/rules"));
+  ({ createTrade } = await import("@/server/queries/trades"));
 });
 
 let ruleId: string;
 
 beforeEach(async () => {
-  await db.delete(schema.badgeUnlocks);
-  await db.delete(schema.tradeRuleChecks);
-  await db.delete(schema.trades);
-  await db.delete(schema.rules);
-
-  const [rule] = await db.insert(schema.rules).values({ text: "Wait for confirmation" }).returning();
+  await wipe();
+  const rule = await createRule("Wait for confirmation");
   ruleId = rule.id;
 });
 
@@ -34,9 +37,8 @@ async function addTrade(opts: {
   outcome?: "win" | "loss" | "breakeven" | null;
   riskRewardRealized?: number | null;
 }) {
-  const [trade] = await db
-    .insert(schema.trades)
-    .values({
+  const trade = await createTrade(
+    tradeSchema.parse({
       direction: "long",
       entryPrice: 100,
       stopLoss: 95,
@@ -45,19 +47,28 @@ async function addTrade(opts: {
       entryAt: opts.entryAt,
       outcome: opts.outcome ?? null,
       riskRewardRealized: opts.riskRewardRealized ?? null,
-    })
-    .returning();
+      ruleChecks:
+        opts.followed !== undefined
+          ? [{ ruleId, status: opts.followed ? "followed" : "not_followed" }]
+          : [],
+    }),
+  );
 
-  if (opts.followed !== undefined) {
-    await db.insert(schema.tradeRuleChecks).values({
-      tradeId: trade.id,
-      ruleId,
-      ruleTextSnapshot: "Wait for confirmation",
-      status: opts.followed ? "followed" : "not_followed",
-    });
+  // createTrade() always recomputes riskRewardRealized from
+  // entryPrice/stopLoss/exitPrice (unchanged from the pre-migration Drizzle
+  // behavior) — these fixtures fabricate an R-multiple directly to test
+  // badge thresholds in isolation from price data, so patch it onto the doc
+  // afterward rather than deriving a realistic exitPrice for every case.
+  if (opts.riskRewardRealized !== undefined) {
+    await tradesCollection().doc(trade.id).update({ riskRewardRealized: opts.riskRewardRealized });
+    return { ...trade, riskRewardRealized: opts.riskRewardRealized };
   }
 
   return trade;
+}
+
+async function allBadgeUnlockRows() {
+  return (await badgeUnlocksCollection().get()).docs.map((d) => d.data());
 }
 
 describe("evaluateBadgesForTrade", () => {
@@ -83,7 +94,7 @@ describe("evaluateBadgesForTrade", () => {
     const t4 = await addTrade({ entryAt: "2026-01-04T10:00:00.000Z" });
     expect(await evaluateBadgesForTrade(t4.id)).toEqual([]);
 
-    const rows = await db.select().from(schema.badgeUnlocks);
+    const rows = await allBadgeUnlockRows();
     expect(rows.filter((r) => r.badgeKey === "streak_3")).toHaveLength(1);
   });
 
@@ -165,7 +176,7 @@ describe("evaluateBadgesForTrade", () => {
     const unlocks = await evaluateBadgesForTrade(t2.id);
     expect(unlocks).toEqual([]);
 
-    const rows = await db.select().from(schema.badgeUnlocks);
+    const rows = await allBadgeUnlockRows();
     expect(rows.some((r) => r.badgeKey.startsWith("monthly_adherence:"))).toBe(false);
   });
 
@@ -240,7 +251,7 @@ describe("evaluateBadgesForTrade", () => {
       tradeId: t2.id,
     });
 
-    const rows = await db.select().from(schema.badgeUnlocks);
+    const rows = await allBadgeUnlockRows();
     expect(rows.filter((r) => r.badgeKey === "big_win_3r")).toHaveLength(2);
   });
 
@@ -250,7 +261,7 @@ describe("evaluateBadgesForTrade", () => {
     const t2 = await addTrade({ entryAt: "2026-08-02T10:00:00.000Z" });
     expect(await evaluateBadgesForTrade(t2.id)).toEqual([]);
 
-    const rows = await db.select().from(schema.badgeUnlocks);
+    const rows = await allBadgeUnlockRows();
     expect(rows.filter((r) => r.badgeKey === "big_win_3r")).toHaveLength(1);
   });
 

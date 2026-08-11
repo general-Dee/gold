@@ -114,7 +114,7 @@ export default async function TradeDetailPage({
           ) : (
             <ul className="flex flex-col gap-2">
               {checks.map((c) => (
-                <li key={c.id} className="flex items-center justify-between text-sm">
+                <li key={c.ruleId} className="flex items-center justify-between text-sm">
                   <span>{c.ruleTextSnapshot}</span>
                   <Badge
                     variant={

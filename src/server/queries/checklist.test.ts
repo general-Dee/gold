@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
-import { bootstrapTestDb } from "@/server/testUtils/testDb";
+import { bootstrapTestFirestore } from "@/server/testUtils/testFirestore";
 import { DEFAULT_CHECKLIST_ITEMS } from "@/lib/constants";
 import { localDateKey } from "@/lib/dates";
 
-// Every function under test transitively imports "@/server/db/client", which
-// creates its sqlite client as a module-load side effect. A static top-level
-// import would run before bootstrapTestDb() sets DATABASE_URL, so everything
-// is imported dynamically inside beforeAll instead (see gamification.test.ts
-// for the failure mode this avoids). DEFAULT_CHECKLIST_ITEMS/localDateKey have
-// no db dependency, so they're safe to import statically above.
-let db: Awaited<ReturnType<typeof bootstrapTestDb>>["db"];
-let schema: Awaited<ReturnType<typeof bootstrapTestDb>>["schema"];
+// Every function under test transitively imports "@/server/firebase/client",
+// which binds to the emulator project as a module-load side effect. A static
+// top-level import would run before bootstrapTestFirestore() sets
+// FIREBASE_PROJECT_ID, so everything is imported dynamically inside
+// beforeAll instead. DEFAULT_CHECKLIST_ITEMS/localDateKey have no db
+// dependency, so they're safe to import statically above.
+let wipe: Awaited<ReturnType<typeof bootstrapTestFirestore>>["wipe"];
+let checklistItemsCollection: typeof import("@/server/firebase/collections").checklistItemsCollection;
 let computeChecklistStreaks: typeof import("@/server/queries/checklist").computeChecklistStreaks;
 let createChecklistItem: typeof import("@/server/queries/checklist").createChecklistItem;
 let archiveChecklistItem: typeof import("@/server/queries/checklist").archiveChecklistItem;
@@ -21,7 +21,8 @@ let getChecklistHistory: typeof import("@/server/queries/checklist").getChecklis
 let seedDefaultChecklistItemsIfEmpty: typeof import("@/server/queries/checklist").seedDefaultChecklistItemsIfEmpty;
 
 beforeAll(async () => {
-  ({ db, schema } = await bootstrapTestDb());
+  ({ wipe } = await bootstrapTestFirestore());
+  ({ checklistItemsCollection } = await import("@/server/firebase/collections"));
   ({
     computeChecklistStreaks,
     createChecklistItem,
@@ -35,9 +36,13 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.delete(schema.checklistCompletions);
-  await db.delete(schema.checklistItems);
+  await wipe();
 });
+
+async function allChecklistItemRows() {
+  const snapshot = await checklistItemsCollection().get();
+  return snapshot.docs.map((doc) => doc.data());
+}
 
 function daysAgoKey(n: number) {
   // Mirrors getChecklistHistory's own calendar-day subtraction (setDate, not a
@@ -149,11 +154,11 @@ describe("getChecklistHistory", () => {
 describe("seedDefaultChecklistItemsIfEmpty", () => {
   it("seeds the default items only when the table is empty", async () => {
     await seedDefaultChecklistItemsIfEmpty();
-    const afterFirstSeed = await db.select().from(schema.checklistItems);
+    const afterFirstSeed = await allChecklistItemRows();
     expect(afterFirstSeed).toHaveLength(DEFAULT_CHECKLIST_ITEMS.length);
 
     await seedDefaultChecklistItemsIfEmpty();
-    const afterSecondSeed = await db.select().from(schema.checklistItems);
+    const afterSecondSeed = await allChecklistItemRows();
     expect(afterSecondSeed).toHaveLength(DEFAULT_CHECKLIST_ITEMS.length);
   });
 
@@ -161,8 +166,8 @@ describe("seedDefaultChecklistItemsIfEmpty", () => {
     await createChecklistItem("Custom item");
     await seedDefaultChecklistItemsIfEmpty();
 
-    const items = await db.select().from(schema.checklistItems);
+    const items = await allChecklistItemRows();
     expect(items).toHaveLength(1);
-    expect(items[0].text).toBe("Custom item");
+    expect(items[0]!.text).toBe("Custom item");
   });
 });
